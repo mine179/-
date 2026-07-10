@@ -1,0 +1,577 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.suppliercustomer.mapper.ProductMapper">
+    <sql id="productColumns">
+        series,brand,code,new_code,color,category,craft_material,spec_model,common_model,
+        size_value,resolution,model_remark,sale_price,purchase_price,update_date
+    </sql>
+
+    <sql id="productValues">
+        #{series},#{brand},#{code},#{newCode},#{color},#{category},#{craftMaterial},#{specModel},#{commonModel},
+        #{sizeValue},#{resolution},#{modelRemark},#{salePrice},#{purchasePrice},#{updateDate}
+    </sql>
+
+    <select id="listTable" resultType="java.util.LinkedHashMap">
+        select * from ${tableName} order by id desc
+    </select>
+
+    <update id="updateTableRow">
+        update ${tableName}
+        <set>
+            <foreach collection="data" index="key" item="value" separator=",">
+                ${key}=#{value}
+            </foreach>
+        </set>
+        where id=#{id}
+    </update>
+
+    <delete id="deleteTableRow">
+        delete from ${tableName} where id=#{id}
+    </delete>
+
+    <insert id="insertTableRow">
+        insert into ${tableName}
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <foreach collection="data" index="key" item="value" separator=",">
+                ${key}
+            </foreach>
+        </trim>
+        values
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <foreach collection="data" index="key" item="value" separator=",">
+                #{value}
+            </foreach>
+        </trim>
+    </insert>
+
+    <insert id="insertMaster" parameterType="com.suppliercustomer.pojo.Product" useGeneratedKeys="true" keyProperty="id">
+        insert into master_products(<include refid="productColumns"/>,supplier_username,customer_username,order_no,linked_master_product_id,source_type)
+        values(<include refid="productValues"/>,#{supplierUsername},#{customerUsername},#{orderNo},#{linkedMasterProductId},#{sourceType})
+    </insert>
+
+    <insert id="insertInternalProduct" parameterType="com.suppliercustomer.pojo.Product" useGeneratedKeys="true" keyProperty="id">
+        insert into internal_products(<include refid="productColumns"/>,master_product_id)
+        values(<include refid="productValues"/>,#{masterProductId})
+    </insert>
+
+    <update id="updateInternalMasterId">
+        update internal_products set master_product_id=#{masterProductId}, updated_at=current_timestamp where id=#{id}
+    </update>
+
+    <insert id="insertSupplierSubmission" parameterType="com.suppliercustomer.pojo.Product">
+        insert into supplier_submissions(<include refid="productColumns"/>,supplier_username,status)
+        values(<include refid="productValues"/>,#{supplierUsername},#{status})
+    </insert>
+
+    <insert id="insertCustomerOrder" parameterType="com.suppliercustomer.pojo.CustomerOrder">
+        insert into customer_orders(order_no,customer_username,status)
+        values(#{orderNo},#{customerUsername},#{status})
+    </insert>
+
+    <insert id="insertCustomerOrderItem" parameterType="com.suppliercustomer.pojo.Product">
+        insert into customer_order_items(<include refid="productColumns"/>,order_no,customer_username,matched,master_product_id,status)
+        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{matched},#{masterProductId},#{status})
+    </insert>
+
+    <insert id="insertCustomerProduct" parameterType="com.suppliercustomer.pojo.Product">
+        insert into customer_products(<include refid="productColumns"/>,customer_username,matched,master_product_id,status)
+        values(<include refid="productValues"/>,#{customerUsername},#{matched},#{masterProductId},#{status})
+    </insert>
+
+    <insert id="insertUnmatchedCustomerItem" parameterType="com.suppliercustomer.pojo.Product">
+        insert into unmatched_customer_items(<include refid="productColumns"/>,order_no,customer_username,status)
+        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{status})
+    </insert>
+
+    <insert id="insertSupplierQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
+        insert into supplier_quotes(order_no,customer_item_id,master_product_id,supplier_username,customer_username,code,spec_model,purchase_price,sale_price,status,pricing_status)
+        values(#{orderNo},#{customerItemId},#{masterProductId},#{supplierUsername},#{customerUsername},#{code},#{specModel},#{purchasePrice},#{salePrice},#{status},'WAIT_USE_PRICE')
+    </insert>
+
+    <select id="findCustomerOrder" resultType="com.suppliercustomer.pojo.CustomerOrder">
+        select * from customer_orders where order_no=#{orderNo}
+    </select>
+
+    <select id="findCustomerOrderByCustomer" resultType="com.suppliercustomer.pojo.CustomerOrder">
+        select * from customer_orders where order_no=#{orderNo} and customer_username=#{customerUsername}
+    </select>
+
+    <select id="findSupplierSubmission" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions where id=#{id}
+    </select>
+
+    <select id="findUnmatchedCustomerItem" resultType="com.suppliercustomer.pojo.Product">
+        select * from unmatched_customer_items where id=#{id}
+    </select>
+
+    <select id="findCustomerOrderItem" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_order_items where id=#{id}
+    </select>
+
+    <select id="findCustomerProductByCustomer" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_products where id=#{id} and customer_username=#{customerUsername}
+    </select>
+
+    <select id="findCustomerProduct" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_products where id=#{id}
+    </select>
+
+    <select id="findInternalProduct" resultType="com.suppliercustomer.pojo.Product">
+        select * from internal_products where id=#{id}
+    </select>
+
+    <select id="findInternalProductByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from internal_products where code=#{code} order by id limit 1
+    </select>
+
+    <select id="findSupplierSubmissionBySpecAndSupplier" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions
+        where ifnull(spec_model, '')=#{specModel} and supplier_username=#{supplierUsername}
+        order by id
+        limit 1
+    </select>
+
+    <select id="findCustomerProductByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_products
+        where customer_username=#{customerUsername}
+          and code=#{code}
+        order by id
+        limit 1
+    </select>
+
+    <select id="findCustomerProductByModels" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_products
+        where customer_username=#{customerUsername}
+          and ifnull(spec_model, '')=#{specModel}
+          and ifnull(common_model, '')=#{commonModel}
+        order by id
+        limit 1
+    </select>
+
+    <select id="findMasterByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from master_products where code=#{code} order by id limit 1
+    </select>
+
+    <select id="findMastersByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from master_products where code=#{code} and supplier_username is not null and supplier_username!=''
+    </select>
+
+    <select id="findSupplierSubmissionsByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions
+        where code=#{code}
+          and supplier_username is not null
+          and supplier_username!=''
+          and status='APPROVED'
+    </select>
+
+    <select id="listMatchedOrderItems" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_order_items
+        where order_no=#{orderNo}
+          and code is not null
+          and code!=''
+          and (status is null or status!='CANCELLED')
+    </select>
+
+    <select id="listAdminOrderItems" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_order_items where order_no=#{orderNo} order by id
+    </select>
+
+    <select id="listSupplierSubmissions" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions where supplier_username=#{supplierUsername} order by id desc
+    </select>
+
+    <select id="listSupplierQuotes" resultType="com.suppliercustomer.pojo.SupplierQuote">
+        select * from supplier_quotes where supplier_username=#{supplierUsername} order by id desc
+    </select>
+
+    <select id="listSupplierQuoteOrders" resultType="java.util.LinkedHashMap">
+        select min(id) id,
+               order_no,
+               customer_username,
+               case
+                 when sum(case when status='WAIT_SUPPLIER_PRICE' then 1 else 0 end) > 0 then 'WAIT_SUPPLIER_PRICE'
+                 else 'SUPPLIER_PRICED'
+               end status,
+               max(created_at) created_at,
+               max(updated_at) updated_at
+        from supplier_quotes
+        where supplier_username=#{supplierUsername}
+        group by order_no, customer_username
+        order by max(id) desc
+    </select>
+
+    <select id="listSupplierQuoteItems" resultType="com.suppliercustomer.pojo.SupplierQuote">
+        select * from supplier_quotes
+        where supplier_username=#{supplierUsername} and order_no=#{orderNo}
+        order by id
+    </select>
+
+    <select id="listSupplierQuoteItemDetails" resultType="java.util.LinkedHashMap">
+        select q.id,
+               q.order_no,
+               q.customer_item_id,
+               q.customer_username,
+               q.supplier_username,
+               coalesce(q.code, i.code) code,
+               i.new_code,
+               i.series,
+               i.brand,
+               i.color,
+               i.category,
+               i.craft_material,
+               coalesce(q.spec_model, i.spec_model) spec_model,
+               i.common_model,
+               i.size_value,
+               i.resolution,
+               i.model_remark,
+               q.purchase_price,
+               q.sale_price,
+               q.status,
+               q.pricing_status,
+               q.created_at,
+               q.updated_at
+        from supplier_quotes q
+        left join customer_order_items i on q.customer_item_id=i.id
+        where q.supplier_username=#{supplierUsername} and q.order_no=#{orderNo}
+        order by q.id
+    </select>
+
+    <select id="listAdminSupplierQuoteItemDetails" resultType="java.util.LinkedHashMap">
+        select q.id,
+               q.order_no,
+               q.customer_item_id,
+               q.customer_username,
+               q.supplier_username,
+               coalesce(q.code, i.code) code,
+               i.new_code,
+               i.series,
+               i.brand,
+               i.color,
+               i.category,
+               i.craft_material,
+               coalesce(q.spec_model, i.spec_model) spec_model,
+               i.common_model,
+               i.size_value,
+               i.resolution,
+               i.model_remark,
+               q.purchase_price,
+               q.sale_price,
+               q.status,
+               q.pricing_status,
+               q.created_at,
+               q.updated_at
+        from supplier_quotes q
+        left join customer_order_items i on q.customer_item_id=i.id
+        where q.supplier_username=#{supplierUsername} and q.order_no=#{orderNo}
+        order by q.id
+    </select>
+
+    <select id="listPricingAuditRows" resultType="java.util.LinkedHashMap">
+        select q.id,
+               q.order_no,
+               q.customer_item_id,
+               q.customer_username,
+               q.supplier_username,
+               coalesce(q.code, i.code) code,
+               i.new_code,
+               i.series,
+               i.brand,
+               i.color,
+               i.category,
+               i.craft_material,
+               coalesce(q.spec_model, i.spec_model) spec_model,
+               i.common_model,
+               i.size_value,
+               i.resolution,
+               i.model_remark,
+               q.purchase_price,
+               q.sale_price,
+               q.status,
+               q.pricing_status,
+               q.created_at,
+               q.updated_at
+        from supplier_quotes q
+        left join customer_order_items i on q.customer_item_id=i.id
+        where q.status='SUPPLIER_PRICED'
+        order by q.id desc
+    </select>
+
+    <select id="listCustomerOrders" resultType="com.suppliercustomer.pojo.CustomerOrder">
+        select *
+        from customer_orders
+        where customer_username=#{customerUsername}
+        order by id desc
+    </select>
+
+    <select id="listCustomerOrderItems" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_order_items
+        where order_no=#{orderNo} and customer_username=#{customerUsername}
+        order by id
+    </select>
+
+    <select id="listCustomerProducts" resultType="com.suppliercustomer.pojo.Product">
+        select * from customer_products
+        where customer_username=#{customerUsername}
+        order by id desc
+    </select>
+
+    <select id="listInternalProducts" resultType="com.suppliercustomer.pojo.Product">
+        select * from internal_products order by id desc
+    </select>
+
+    <update id="cancelCustomerOrder">
+        update customer_orders set status='CANCELLED', updated_at=current_timestamp where order_no=#{orderNo}
+    </update>
+
+    <update id="cancelCustomerOrderItemsByOrderNo">
+        update customer_order_items set status='CANCELLED', updated_at=current_timestamp where order_no=#{orderNo}
+    </update>
+
+    <update id="cancelCustomerOrderItem">
+        update customer_order_items set status='CANCELLED', updated_at=current_timestamp where id=#{id}
+    </update>
+
+    <update id="cancelCustomerOrderItemByCustomer">
+        update customer_order_items set status='CANCELLED', updated_at=current_timestamp
+        where id=#{id} and customer_username=#{customerUsername}
+    </update>
+
+    <update id="updateCustomerOrderItemPrices">
+        update customer_order_items
+        set purchase_price=#{purchasePrice},
+            sale_price=#{salePrice},
+            updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="markCustomerOrderQuoted">
+        update customer_orders set status='QUOTE_GENERATED', updated_at=current_timestamp where order_no=#{orderNo}
+    </update>
+
+    <update id="markCustomerOrderCompletedIfReady">
+        update customer_orders
+        set status='COMPLETED', updated_at=current_timestamp
+        where order_no=#{orderNo}
+          and status!='CANCELLED'
+          and exists (
+              select 1 from customer_order_items
+              where order_no=#{orderNo}
+                and (status is null or status!='CANCELLED')
+          )
+          and not exists (
+              select 1 from customer_order_items
+              where order_no=#{orderNo}
+                and (status is null or status!='CANCELLED')
+                and sale_price is null
+          )
+    </update>
+
+    <update id="markQuotePricingUsed">
+        update supplier_quotes
+        set pricing_status='USED_PRICE', updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="markOtherQuotePricingNotUsed">
+        update supplier_quotes
+        set pricing_status='NOT_USE_PRICE', updated_at=current_timestamp
+        where id!=#{id}
+          and order_no=#{orderNo}
+          and code=#{code}
+    </update>
+
+    <update id="updateCustomerProductByCustomer" parameterType="com.suppliercustomer.pojo.Product">
+        update customer_products
+        set series=#{series},
+            brand=#{brand},
+            color=#{color},
+            category=#{category},
+            craft_material=#{craftMaterial},
+            spec_model=#{specModel},
+            common_model=#{commonModel},
+            size_value=#{sizeValue},
+            resolution=#{resolution},
+            model_remark=#{modelRemark},
+            sale_price=#{salePrice},
+            master_product_id=#{masterProductId},
+            updated_at=current_timestamp
+        where id=#{id} and customer_username=#{customerUsername}
+    </update>
+
+    <update id="approveSupplierSubmission" parameterType="com.suppliercustomer.pojo.Product">
+        update supplier_submissions
+        set code=#{code},new_code=#{newCode},master_product_id=#{masterProductId},status='APPROVED',updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="approveUnmatchedCustomerItem" parameterType="com.suppliercustomer.pojo.Product">
+        update unmatched_customer_items
+        set code=#{code},new_code=#{newCode},master_product_id=#{masterProductId},status='APPROVED',updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="approveCustomerProduct" parameterType="com.suppliercustomer.pojo.Product">
+        update customer_products
+        set code=#{code},new_code=#{newCode},master_product_id=#{masterProductId},matched=true,status='APPROVED',updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="linkCustomerOrderItemsByModels" parameterType="com.suppliercustomer.pojo.Product">
+        update customer_order_items
+        set code=#{code},
+            new_code=#{newCode},
+            master_product_id=#{masterProductId},
+            matched=true,
+            status='ACTIVE',
+            updated_at=current_timestamp
+        where customer_username=#{customerUsername}
+          and ifnull(spec_model, '')=ifnull(#{specModel}, '')
+          and ifnull(common_model, '')=ifnull(#{commonModel}, '')
+          and (matched=false or ifnull(code, '')='')
+    </update>
+
+    <update id="supplierUpdateQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
+        update supplier_quotes
+        set purchase_price=#{purchasePrice},status='SUPPLIER_PRICED',updated_at=current_timestamp
+        where id=#{id} and supplier_username=#{supplierUsername}
+    </update>
+
+    <update id="supplierUpdateQuoteByOrderAndCode" parameterType="com.suppliercustomer.pojo.SupplierQuote">
+        update supplier_quotes
+        set purchase_price=#{purchasePrice},status='SUPPLIER_PRICED',updated_at=current_timestamp
+        where supplier_username=#{supplierUsername}
+          and order_no=#{orderNo}
+          and code=#{code}
+    </update>
+
+    <update id="adminUpdateQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
+        update supplier_quotes
+        <set>
+            <if test="purchasePrice != null">purchase_price=#{purchasePrice},</if>
+            <if test="salePrice != null">sale_price=#{salePrice},</if>
+            <if test="status != null and status != ''">status=#{status},</if>
+            updated_at=current_timestamp
+        </set>
+        where id=#{id}
+    </update>
+
+    <select id="findSupplierQuote" resultType="com.suppliercustomer.pojo.SupplierQuote">
+        select * from supplier_quotes where id=#{id}
+    </select>
+
+    <update id="useQuoteOnCustomerItem">
+        update customer_order_items
+        <set>
+            purchase_price=#{purchasePrice},
+            <if test="salePrice != null">sale_price=#{salePrice},</if>
+            updated_at=current_timestamp
+        </set>
+        where id=#{customerItemId}
+    </update>
+
+    <update id="pushInternalOrderPrice">
+        update internal_products
+        set order_price_5=order_price_4,
+            order_price_4=order_price_3,
+            order_price_3=order_price_2,
+            order_price_2=order_price_1,
+            order_price_1=#{entry},
+            updated_at=current_timestamp
+        where code=#{code}
+          and ifnull(order_price_1, '')!=#{entry}
+          and ifnull(order_price_2, '')!=#{entry}
+          and ifnull(order_price_3, '')!=#{entry}
+          and ifnull(order_price_4, '')!=#{entry}
+          and ifnull(order_price_5, '')!=#{entry}
+    </update>
+
+    <update id="updateInternalSalePriceByCode">
+        update internal_products
+        set sale_price=#{salePrice}, updated_at=current_timestamp
+        where code=#{code}
+    </update>
+
+    <update id="updateMasterById" parameterType="com.suppliercustomer.pojo.Product">
+        update master_products
+        set series=#{series},
+            brand=#{brand},
+            code=#{code},
+            new_code=#{newCode},
+            color=#{color},
+            category=#{category},
+            craft_material=#{craftMaterial},
+            spec_model=#{specModel},
+            common_model=#{commonModel},
+            size_value=#{sizeValue},
+            resolution=#{resolution},
+            model_remark=#{modelRemark},
+            sale_price=#{salePrice},
+            purchase_price=#{purchasePrice},
+            customer_username=#{customerUsername},
+            updated_at=current_timestamp
+        where id=#{masterProductId}
+    </update>
+
+    <update id="updateMasterFromSupplier" parameterType="com.suppliercustomer.pojo.Product">
+        update master_products
+        set series=#{series},
+            brand=#{brand},
+            new_code=#{newCode},
+            color=#{color},
+            category=#{category},
+            craft_material=#{craftMaterial},
+            common_model=#{commonModel},
+            size_value=#{sizeValue},
+            resolution=#{resolution},
+            model_remark=#{modelRemark},
+            purchase_price=#{purchasePrice},
+            updated_at=current_timestamp
+        where source_type='SUPPLIER'
+          and code=#{code}
+          and spec_model=#{specModel}
+          and supplier_username=#{supplierUsername}
+    </update>
+
+    <update id="updateMasterFromCustomer" parameterType="com.suppliercustomer.pojo.Product">
+        update master_products
+        set series=#{series},
+            brand=#{brand},
+            new_code=#{newCode},
+            color=#{color},
+            category=#{category},
+            craft_material=#{craftMaterial},
+            common_model=#{commonModel},
+            size_value=#{sizeValue},
+            resolution=#{resolution},
+            model_remark=#{modelRemark},
+            sale_price=#{salePrice},
+            updated_at=current_timestamp
+        where source_type='CUSTOMER_MATCH'
+          and code=#{code}
+          and spec_model=#{specModel}
+          and customer_username=#{customerUsername}
+          and (order_no=#{orderNo} or #{orderNo} is null)
+    </update>
+
+    <update id="updateInternalLinkedMaster" parameterType="com.suppliercustomer.pojo.Product">
+        update master_products
+        set series=#{series},
+            brand=#{brand},
+            code=#{code},
+            new_code=#{newCode},
+            color=#{color},
+            category=#{category},
+            craft_material=#{craftMaterial},
+            spec_model=#{specModel},
+            common_model=#{commonModel},
+            size_value=#{sizeValue},
+            resolution=#{resolution},
+            model_remark=#{modelRemark},
+            sale_price=#{salePrice},
+            purchase_price=#{purchasePrice},
+            updated_at=current_timestamp
+        where id=#{masterProductId}
+    </update>
+</mapper>

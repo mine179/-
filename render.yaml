@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: supplier-customer-backend
+    runtime: docker
+    rootDir: backend
+    plan: free
+    envVars:
+      - key: APP_CORS_ORIGIN
+        value: https://your-frontend-url.vercel.app

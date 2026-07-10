@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+
+# Local database/runtime files
+backend/data/
+*.lock.db
+*.mv.db
+
+# IDE/system files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archives
+*.rar
+*.zip
+
+# Other local projects in this workspace
+solution/
+vue - 售后/
