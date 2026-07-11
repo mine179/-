@@ -39,13 +39,13 @@ import java.util.Set;
 @Service
 public class ProductServiceImpl implements ProductService {
     private static final String[] HEADERS = {
-            "系列", "品牌", "编码", "新编码", "颜色", "类别", "工艺/材质", "规格型号", "通用型号",
+            "系列", "品牌", "物料编码", "新编码", "颜色", "类别", "工艺/材质", "规格型号", "通用型号",
             "尺寸", "分辨率", "型号备注", "销售价格", "供应价"
     };
     private static final List<FieldDef> PRODUCT_FIELDS = Arrays.asList(
             new FieldDef("系列", "series"),
             new FieldDef("品牌", "brand"),
-            new FieldDef("编码", "code"),
+            new FieldDef("物料编码", "code"),
             new FieldDef("新编码", "new_code"),
             new FieldDef("颜色", "color"),
             new FieldDef("类别", "category"),
@@ -58,7 +58,7 @@ public class ProductServiceImpl implements ProductService {
             new FieldDef("销售价格", "sale_price", "decimal"),
             new FieldDef("供应价", "purchase_price", "decimal")
     );
-    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "code", "new_code", "sale_price");
+    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "new_code", "sale_price");
     private static final List<FieldDef> CUSTOMER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "code", "new_code", "purchase_price");
     private static final List<FieldDef> SUPPLIER_QUOTE_PRICE_FIELDS = Arrays.asList(
             new FieldDef("订单编号", "order_no"),
@@ -81,7 +81,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public List<Map<String, Object>> listTable(String name) {
         if ("pricingAudit".equals(name)) {
-            return productMapper.listPricingAuditRows();
+            return buildPricingAuditRows(productMapper.listPricingAuditRows());
         }
         return productMapper.listTable(tableName(name));
     }
@@ -229,11 +229,13 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public void adminUpdateQuote(Long id, SupplierQuote quote) {
+        SupplierQuote existing = productMapper.findSupplierQuote(id);
         quote.setId(id);
         if (quote.getPurchasePrice() != null && empty(quote.getStatus())) {
             quote.setStatus("SUPPLIER_PRICED");
         }
         productMapper.adminUpdateQuote(quote);
+        syncSupplierProductPrice(existing, quote.getPurchasePrice());
     }
 
     @Override
@@ -248,7 +250,9 @@ public class ProductServiceImpl implements ProductService {
             if (quote.getPurchasePrice() != null && empty(quote.getStatus())) {
                 quote.setStatus("SUPPLIER_PRICED");
             }
+            SupplierQuote existing = productMapper.findSupplierQuote(quote.getId());
             productMapper.adminUpdateQuote(quote);
+            syncSupplierProductPrice(existing, quote.getPurchasePrice());
         }
     }
 
@@ -271,7 +275,7 @@ public class ProductServiceImpl implements ProductService {
             throw new CustomException("报价缺少物料编码，不能写入价格趋势表");
         }
         productMapper.useQuoteOnCustomerItem(quote.getCustomerItemId(), quote.getPurchasePrice(), quote.getSalePrice());
-        productMapper.updateInternalSalePriceByCode(quote.getCode(), quote.getSalePrice());
+        productMapper.updateInternalPricesByCode(quote.getCode(), quote.getPurchasePrice(), quote.getSalePrice());
         productMapper.pushInternalOrderPrice(quote.getCode(), priceTrendEntry(quote.getPurchasePrice(), quote.getSupplierUsername()));
         productMapper.markQuotePricingUsed(id);
         productMapper.markOtherQuotePricingNotUsed(id, quote.getOrderNo(), quote.getCode());
@@ -343,7 +347,11 @@ public class ProductServiceImpl implements ProductService {
                 quote.setSupplierUsername(supplierUsername);
                 quote.setCode(code);
                 quote.setPurchasePrice(decimal(price));
-                updated += productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+                int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+                updated += changed;
+                if (changed > 0) {
+                    syncSupplierProductPrice(quote);
+                }
             } catch (NumberFormatException e) {
                 // 非数字价格忽略，不新增也不中断。
             }
@@ -365,7 +373,7 @@ public class ProductServiceImpl implements ProductService {
     public void addSupplierSubmission(String supplierUsername, Product product) {
         clearProtectedCodes(product);
         product.setSupplierUsername(supplierUsername);
-        product.setStatus("PENDING");
+        applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
     }
 
@@ -396,9 +404,11 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public void supplierUpdateQuote(String supplierUsername, Long id, SupplierQuote quote) {
+        SupplierQuote existing = productMapper.findSupplierQuote(id);
         quote.setId(id);
         quote.setSupplierUsername(supplierUsername);
         productMapper.supplierUpdateQuote(quote);
+        syncSupplierProductPrice(existing, quote.getPurchasePrice());
     }
 
     @Override
@@ -410,8 +420,10 @@ public class ProductServiceImpl implements ProductService {
             if (quote.getId() == null) {
                 continue;
             }
+            SupplierQuote existing = productMapper.findSupplierQuote(quote.getId());
             quote.setSupplierUsername(supplierUsername);
             productMapper.supplierUpdateQuote(quote);
+            syncSupplierProductPrice(existing, quote.getPurchasePrice());
         }
     }
 
@@ -474,7 +486,11 @@ public class ProductServiceImpl implements ProductService {
                 quote.setOrderNo(orderNo);
                 quote.setCode(code);
                 quote.setPurchasePrice(decimal(price));
-                updated += productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+                int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+                updated += changed;
+                if (changed > 0) {
+                    syncSupplierProductPrice(quote);
+                }
             } catch (NumberFormatException e) {
                 // 非数字价格忽略，不新增也不中断。
             }
@@ -763,8 +779,11 @@ public class ProductServiceImpl implements ProductService {
                 throw new CustomException("第 " + (i + 1) + " 行缺少供应商账号");
             }
             Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(specModel, supplierUsername);
+            Product imported = mapToProduct(data);
+            applySupplierCodeStatus(imported);
+            data.put("status", imported.getStatus());
+            data.put("master_product_id", imported.getMasterProductId());
             if (existing == null) {
-                data.put("status", "PENDING");
                 productMapper.insertTableRow("supplier_submissions", data);
             } else {
                 productMapper.updateTableRow("supplier_submissions", existing.getId(), data);
@@ -968,7 +987,7 @@ public class ProductServiceImpl implements ProductService {
             }
             Product product = readRow(row, SUPPLIER_PRODUCT_FIELDS);
             product.setSupplierUsername(supplierUsername);
-            product.setStatus("PENDING");
+            applySupplierCodeStatus(product);
             Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(
                     product.getSpecModel() == null ? "" : product.getSpecModel(),
                     supplierUsername
@@ -978,7 +997,7 @@ public class ProductServiceImpl implements ProductService {
             } else {
                 product.setId(existing.getId());
                 product.setMasterProductId(existing.getMasterProductId());
-                product.setStatus(empty(existing.getStatus()) ? "PENDING" : existing.getStatus());
+                applySupplierCodeStatus(product);
                 productMapper.updateTableRow("supplier_submissions", existing.getId(), supplierProductData(product));
                 syncLinkedMaster("supplier", existing.getId());
             }
@@ -1140,6 +1159,90 @@ public class ProductServiceImpl implements ProductService {
         return "￥" + amount + "/" + supplier + "/" + date;
     }
 
+    private void syncSupplierProductPrice(SupplierQuote quote, BigDecimal purchasePrice) {
+        if (quote == null || purchasePrice == null || empty(quote.getSupplierUsername()) || empty(quote.getCode())) {
+            return;
+        }
+        productMapper.updateSupplierSubmissionPrice(quote.getSupplierUsername(), quote.getCode(), purchasePrice);
+    }
+
+    private void syncSupplierProductPrice(SupplierQuote quote) {
+        if (quote == null) {
+            return;
+        }
+        syncSupplierProductPrice(quote, quote.getPurchasePrice());
+    }
+
+    private List<Map<String, Object>> buildPricingAuditRows(List<Map<String, Object>> sourceRows) {
+        Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+        if (sourceRows == null) {
+            return new ArrayList<>();
+        }
+        for (Map<String, Object> row : sourceRows) {
+            String orderNo = stringValue(row.get("order_no"));
+            String code = stringValue(row.get("code"));
+            if (empty(orderNo) || empty(code) || row.get("purchase_price") == null) {
+                continue;
+            }
+            String key = orderNo + "|" + code;
+            if (!groups.containsKey(key)) {
+                groups.put(key, new ArrayList<Map<String, Object>>());
+            }
+            groups.get(key).add(row);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (List<Map<String, Object>> rows : groups.values()) {
+            rows.sort((left, right) -> decimalValue(left.get("purchase_price")).compareTo(decimalValue(right.get("purchase_price"))));
+            Map<String, Object> first = rows.get(0);
+            Map<String, Object> target = new LinkedHashMap<>();
+            target.put("id", first.get("id"));
+            target.put("order_no", first.get("order_no"));
+            target.put("customer_username", first.get("customer_username"));
+            target.put("code", first.get("code"));
+            target.put("new_code", first.get("new_code"));
+            target.put("spec_model", first.get("spec_model"));
+            target.put("pricing_status", groupPricingStatus(rows));
+            for (int i = 0; i < 5; i++) {
+                int index = i + 1;
+                if (i < rows.size()) {
+                    Map<String, Object> row = rows.get(i);
+                    target.put("quote_id_" + index, row.get("id"));
+                    target.put("ref_price_" + index, row.get("purchase_price"));
+                    target.put("supplier_" + index, row.get("supplier_username"));
+                } else {
+                    target.put("quote_id_" + index, "");
+                    target.put("ref_price_" + index, "");
+                    target.put("supplier_" + index, "");
+                }
+            }
+            result.add(target);
+        }
+        return result;
+    }
+
+    private String groupPricingStatus(List<Map<String, Object>> rows) {
+        for (Map<String, Object> row : rows) {
+            if ("USED_PRICE".equals(stringValue(row.get("pricing_status")))) {
+                return "USED_PRICE";
+            }
+        }
+        return "WAIT_USE_PRICE";
+    }
+
+    private BigDecimal decimalValue(Object value) {
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Number) {
+            return new BigDecimal(String.valueOf(value));
+        }
+        if (value == null || empty(String.valueOf(value))) {
+            return BigDecimal.ZERO;
+        }
+        return new BigDecimal(String.valueOf(value));
+    }
+
     private Long longValue(Object value) {
         if (value instanceof Number) {
             return ((Number) value).longValue();
@@ -1281,7 +1384,7 @@ public class ProductServiceImpl implements ProductService {
                 new FieldDef("客户明细ID", "customer_item_id"),
                 new FieldDef("供应商账号", "supplier_username"),
                 new FieldDef("客户账号", "customer_username"),
-                new FieldDef("编码", "code"),
+                new FieldDef("物料编码", "code"),
                 new FieldDef("规格型号", "spec_model"),
                 new FieldDef("供应价", "purchase_price", "decimal"),
                 new FieldDef("销售价", "sale_price", "decimal"),
@@ -1308,8 +1411,29 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private void clearProtectedCodes(Product product) {
-        product.setCode("");
         product.setNewCode("");
+    }
+
+    private void applySupplierCodeStatus(Product product) {
+        if (empty(product.getCode())) {
+            product.setMasterProductId(null);
+            product.setStatus("PENDING");
+            return;
+        }
+        Product internal = productMapper.findInternalProductByCode(product.getCode());
+        if (internal == null) {
+            product.setMasterProductId(null);
+            product.setStatus("CODE_NOT_FOUND");
+            return;
+        }
+        product.setMasterProductId(internal.getId());
+        product.setStatus("APPROVED");
+    }
+
+    private Product mapToProduct(Map<String, Object> data) {
+        Product product = new Product();
+        product.setCode(stringValue(data.get("code")));
+        return product;
     }
 
     private static class FieldDef {

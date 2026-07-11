@@ -457,6 +457,13 @@
         where id=#{id}
     </update>
 
+    <update id="updateSupplierSubmissionPrice">
+        update supplier_submissions
+        set purchase_price=#{purchasePrice}, updated_at=current_timestamp
+        where supplier_username=#{supplierUsername}
+          and code=#{code}
+    </update>
+
     <select id="findSupplierQuote" resultType="com.suppliercustomer.pojo.SupplierQuote">
         select * from supplier_quotes where id=#{id}
     </select>
@@ -487,9 +494,11 @@
           and ifnull(order_price_5, '')!=#{entry}
     </update>
 
-    <update id="updateInternalSalePriceByCode">
+    <update id="updateInternalPricesByCode">
         update internal_products
-        set sale_price=#{salePrice}, updated_at=current_timestamp
+        set purchase_price=#{purchasePrice},
+            sale_price=#{salePrice},
+            updated_at=current_timestamp
         where code=#{code}
     </update>
 

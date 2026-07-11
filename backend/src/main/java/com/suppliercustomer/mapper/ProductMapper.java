@@ -138,6 +138,10 @@ public interface ProductMapper {
 
     void adminUpdateQuote(SupplierQuote quote);
 
+    void updateSupplierSubmissionPrice(@Param("supplierUsername") String supplierUsername,
+                                       @Param("code") String code,
+                                       @Param("purchasePrice") java.math.BigDecimal purchasePrice);
+
     SupplierQuote findSupplierQuote(Long id);
 
     void useQuoteOnCustomerItem(@Param("customerItemId") Long customerItemId,
@@ -146,8 +150,9 @@ public interface ProductMapper {
 
     void pushInternalOrderPrice(@Param("code") String code, @Param("entry") String entry);
 
-    void updateInternalSalePriceByCode(@Param("code") String code,
-                                       @Param("salePrice") java.math.BigDecimal salePrice);
+    void updateInternalPricesByCode(@Param("code") String code,
+                                    @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                    @Param("salePrice") java.math.BigDecimal salePrice);
 
     void updateMasterById(Product product);
 

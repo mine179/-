@@ -27,7 +27,7 @@ function defaultWidth(key) {
   return 130
 }
 
-export function startColumnResize(widths, scope, keys, key, event, minWidth = 60) {
+export function startColumnResize(widths, scope, keys, key, event, minWidth = 24) {
   event.preventDefault()
   event.stopPropagation()
 

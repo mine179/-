@@ -23,14 +23,9 @@ const tabs = [
 ]
 
 const protectedCodeFields = ['code', 'newCode']
-const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && !protectedCodeFields.includes(key))
+const supplierProductFields = productFields.filter(([key]) => !['newCode', 'salePrice'].includes(key))
 const customerProductFields = productFields.filter(([key]) => key !== 'purchasePrice' && !protectedCodeFields.includes(key))
 const priceTrendManualFields = [
-  ['manual_price_1', '参考价格1'],
-  ['manual_price_2', '参考价格2'],
-  ['manual_price_3', '参考价格3'],
-  ['manual_price_4', '参考价格4'],
-  ['manual_price_5', '参考价格5']
 ]
 const priceTrendOrderFields = [
   ['order_price_1', '最近订单价格1'],
@@ -68,7 +63,7 @@ const nonProductFields = {
     ['customerItemId', '客户明细ID'],
     ['supplierUsername', '供应商账号'],
     ['customerUsername', '客户账号'],
-    ['code', '编码'],
+    ['code', '物料编码'],
     ['specModel', '规格型号'],
     ['purchasePrice', '供应价'],
     ['salePrice', '销售价'],
@@ -81,16 +76,15 @@ const supplierProductColumnKeys = supplierProductFields.map(([key]) => camelToSn
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
 const tableColumns = {
   internal: ['id', ...productColumnKeys, 'created_at', 'updated_at'],
-  priceTrend: ['brand', 'code', 'craft_material', 'spec_model', ...priceTrendManualFields.map(([key]) => key), ...priceTrendOrderFields.map(([key]) => key)],
-  supplier: ['id', 'status', 'code', 'new_code', ...supplierProductColumnKeys, 'supplier_username', 'created_at', 'updated_at'],
+  priceTrend: ['brand', 'code', 'craft_material', 'spec_model', ...priceTrendOrderFields.map(([key]) => key)],
+  supplier: ['id', 'status', ...supplierProductColumnKeys, 'supplier_username', 'created_at', 'updated_at'],
   orders: ['id', 'order_no', 'customer_username', 'status', 'created_at', 'updated_at'],
   customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'created_at', 'updated_at'],
   quotes: ['id', 'order_no', 'customer_username', 'supplier_username', 'status', 'updated_at'],
   pricingAudit: [
-    'id', 'order_no', 'customer_item_id', 'customer_username', 'supplier_username',
-    'series', 'brand', 'code', 'new_code', 'color', 'category', 'craft_material',
-    'spec_model', 'common_model', 'size_value', 'resolution', 'model_remark',
-    'purchase_price', 'sale_price', 'pricing_status', 'created_at', 'updated_at'
+    'order_no', 'customer_username', 'code', 'new_code', 'spec_model',
+    'ref_price_1', 'supplier_1', 'ref_price_2', 'supplier_2', 'ref_price_3', 'supplier_3',
+    'ref_price_4', 'supplier_4', 'ref_price_5', 'supplier_5', 'pricing_status'
   ],
   users: ['id', 'username', 'role', 'enabled', 'created_at', 'updated_at']
 }
@@ -424,19 +418,30 @@ async function saveAdminQuoteItems() {
 }
 
 function openUseSupplierQuote(item) {
+  const options = []
+  for (let index = 1; index <= 5; index++) {
+    const quoteId = valueOf(item, `quote_id_${index}`)
+    const purchasePrice = valueOf(item, `ref_price_${index}`)
+    const supplierUsername = valueOf(item, `supplier_${index}`)
+    if (quoteId && purchasePrice) {
+      options.push({ quoteId, purchasePrice, supplierUsername })
+    }
+  }
   state.pricingQuote = {
-    id: item.id,
     orderNo: valueOf(item, 'order_no'),
     code: valueOf(item, 'code'),
-    supplierUsername: valueOf(item, 'supplier_username'),
-    purchasePrice: valueOf(item, 'purchase_price'),
-    salePrice: valueOf(item, 'sale_price')
+    options,
+    salePrice: ''
   }
   openModal('usePrice')
 }
 
-async function useSupplierQuote() {
-  const price = state.pricingQuote.purchasePrice
+async function useSupplierQuote(option) {
+  if (!option?.quoteId) {
+    toast('没有可采用的供应商报价')
+    return
+  }
+  const price = option.purchasePrice
   if (!price) {
     toast('请先填写供应价')
     return
@@ -445,11 +450,11 @@ async function useSupplierQuote() {
     toast('请先填写销售价')
     return
   }
-  await request.put(`/admin/quotes/${state.pricingQuote.id}`, {
+  await request.put(`/admin/quotes/${option.quoteId}`, {
     purchasePrice: price,
     salePrice: state.pricingQuote.salePrice
   })
-  await request.post(`/admin/quotes/${state.pricingQuote.id}/use`)
+  await request.post(`/admin/quotes/${option.quoteId}/use`)
   state.pricingQuote = {}
   closeModal()
   await load()
@@ -768,7 +773,7 @@ function canLink(row) {
 function rowCanRelink(row) {
   const status = String(valueOf(row, 'status') || '').toUpperCase()
   const matched = valueOf(row, 'matched')
-  return ['PENDING', 'WAIT_CODE', 'APPROVED', 'ACTIVE'].includes(status) || matched === false || matched === 'false'
+  return ['PENDING', 'WAIT_CODE', 'CODE_NOT_FOUND', 'APPROVED', 'ACTIVE'].includes(status) || matched === false || matched === 'false'
 }
 
 function rowStillUnlinked(row) {
@@ -777,7 +782,7 @@ function rowStillUnlinked(row) {
   if (['APPROVED', 'ACTIVE'].includes(status)) {
     return false
   }
-  if (['PENDING', 'WAIT_CODE'].includes(status)) {
+  if (['PENDING', 'WAIT_CODE', 'CODE_NOT_FOUND'].includes(status)) {
     return true
   }
   return (matched === false || matched === 'false') && !valueOf(row, 'code')
@@ -813,7 +818,7 @@ function statusClass(row, key) {
   if (status === 'QUOTE_GENERATED') return 'status-quote'
   if (status === 'WAIT_SUPPLIER_PRICE') return 'status-submitted'
   if (status === 'SUPPLIER_PRICED') return 'status-quote'
-  if (status === 'PENDING' || status === 'WAIT_CODE') return 'status-wait'
+  if (status === 'PENDING' || status === 'WAIT_CODE' || status === 'CODE_NOT_FOUND') return 'status-wait'
   if (status === 'APPROVED' || status === 'ACTIVE') return 'status-linked'
   return rowStillUnlinked(row) ? 'status-wait' : ''
 }
@@ -1065,7 +1070,7 @@ onMounted(async () => {
         </div>
 
         <div v-if="state.modal === 'approve'" class="modal-body form-grid">
-          <input v-model="state.approve.code" placeholder="编码">
+          <input v-model="state.approve.code" placeholder="物料编码">
           <input v-model="state.approve.newCode" placeholder="新编码">
           <button class="primary" @click="approveRow">确认链接物料编码</button>
         </div>
@@ -1098,13 +1103,31 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div v-if="state.modal === 'usePrice'" class="modal-body form-grid">
-          <input :value="state.pricingQuote.orderNo" disabled>
-          <input :value="state.pricingQuote.code" disabled>
-          <input :value="state.pricingQuote.supplierUsername" disabled>
-          <input v-model="state.pricingQuote.purchasePrice" placeholder="供应价">
-          <input v-model="state.pricingQuote.salePrice" placeholder="销售价">
-          <button class="primary" @click="useSupplierQuote">确认采用价格</button>
+        <div v-if="state.modal === 'usePrice'" class="modal-body">
+          <div class="form-grid">
+            <input :value="state.pricingQuote.orderNo" disabled>
+            <input v-model="state.pricingQuote.salePrice" placeholder="销售价">
+          </div>
+          <div class="table-wrap compact price-option-table">
+            <table>
+              <thead>
+                <tr><th>物料编码</th><th>供应商</th><th>参考价格</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="option in state.pricingQuote.options" :key="option.quoteId">
+                  <td>{{ state.pricingQuote.code }}</td>
+                  <td>{{ option.supplierUsername }}</td>
+                  <td>{{ option.purchasePrice }}</td>
+                  <td class="row-actions action-cell">
+                    <button class="primary" @click="useSupplierQuote(option)">采用价格</button>
+                  </td>
+                </tr>
+                <tr v-if="!state.pricingQuote.options?.length">
+                  <td colspan="4">暂无可采用价格</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div v-if="state.modal === 'quoteImport'" class="modal-body form-grid">

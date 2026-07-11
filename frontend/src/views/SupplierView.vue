@@ -15,7 +15,7 @@ const views = [
   ['quotes', '供应商报价表']
 ]
 
-const supplierProductFields = productFields.filter(([key]) => !['code', 'newCode', 'salePrice'].includes(key))
+const supplierProductFields = productFields.filter(([key]) => !['newCode', 'salePrice'].includes(key))
 const productColumns = ['id', 'status', ...supplierProductFields.map(([key]) => key), 'updatedAt']
 const quoteColumns = ['id', 'orderNo', 'customerUsername', 'status', 'updatedAt']
 const quoteItemColumns = ['code', 'specModel', 'purchasePrice', 'status']
@@ -318,7 +318,7 @@ function statusClass(row, key) {
   const value = String(valueOf(row, 'status') || '').toUpperCase()
   if (value === 'WAIT_SUPPLIER_PRICE') return 'status-submitted'
   if (value === 'SUPPLIER_PRICED' || value === 'APPROVED' || value === 'ACTIVE') return 'status-linked'
-  if (value === 'PENDING' || value === 'WAIT_CODE') return 'status-wait'
+  if (value === 'PENDING' || value === 'WAIT_CODE' || value === 'CODE_NOT_FOUND') return 'status-wait'
   if (value === 'CANCELLED') return 'status-cancelled'
   return ''
 }

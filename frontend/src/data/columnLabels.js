@@ -59,7 +59,17 @@ export const columnLabels = {
   order_price_2: '最近订单价格2',
   order_price_3: '最近订单价格3',
   order_price_4: '最近订单价格4',
-  order_price_5: '最近订单价格5'
+  order_price_5: '最近订单价格5',
+  ref_price_1: '参考价格1',
+  supplier_1: '供应商1',
+  ref_price_2: '参考价格2',
+  supplier_2: '供应商2',
+  ref_price_3: '参考价格3',
+  supplier_3: '供应商3',
+  ref_price_4: '参考价格4',
+  supplier_4: '供应商4',
+  ref_price_5: '参考价格5',
+  supplier_5: '供应商5'
 }
 
 export function columnLabel(key) {
@@ -69,6 +79,7 @@ export function columnLabel(key) {
 const statusLabels = {
   PENDING: '待链接',
   WAIT_CODE: '待链接',
+  CODE_NOT_FOUND: '系统无该物料编码',
   APPROVED: '已链接',
   SUBMITTED: '已提交',
   QUOTE_GENERATED: '已生成报价任务',

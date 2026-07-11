@@ -280,6 +280,17 @@ button.danger {
   font-size: 12px;
 }
 
+.price-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.price-option-table {
+  margin-top: 12px;
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;
@@ -346,7 +357,7 @@ button.danger {
 }
 
 table {
-  width: max-content;
+  width: 100%;
   border-collapse: collapse;
   min-width: 100%;
   table-layout: fixed;
@@ -361,6 +372,7 @@ td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 0;
 }
 
 th {
@@ -441,10 +453,12 @@ th {
 
 .th-filter-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
   min-width: 0;
+  padding-right: 14px;
 }
 
 .th-filter-head span {
