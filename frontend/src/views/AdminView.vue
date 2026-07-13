@@ -13,7 +13,6 @@ const message = ref('')
 
 const tabs = [
   ['internal', '主表'],
-  ['priceTrend', '价格趋势表'],
   ['supplier', '供应商产品表'],
   ['orders', '客户订单表'],
   ['customerProducts', '客户产品表'],
@@ -22,11 +21,17 @@ const tabs = [
   ['users', '账号管理']
 ]
 
-const protectedCodeFields = ['code', 'newCode']
-const supplierProductFields = productFields.filter(([key]) => !['newCode', 'salePrice'].includes(key))
-const customerProductFields = productFields.filter(([key]) => key !== 'purchasePrice' && !protectedCodeFields.includes(key))
-const priceTrendManualFields = [
+const navTree = [
+  { tab: 'internal', children: ['quotes', 'pricingAudit'] },
+  { tab: 'supplier' },
+  { tab: 'orders' },
+  { tab: 'customerProducts' },
+  { tab: 'users' }
 ]
+
+const protectedCodeFields = ['code', 'newCode']
+const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice')
+const customerProductFields = productFields.filter(([key]) => key !== 'purchasePrice' && !protectedCodeFields.includes(key))
 const priceTrendOrderFields = [
   ['order_price_1', '最近订单价格1'],
   ['order_price_2', '最近订单价格2'],
@@ -73,18 +78,18 @@ const nonProductFields = {
 
 const productColumnKeys = productFields.map(([key]) => camelToSnake(key))
 const supplierProductColumnKeys = supplierProductFields.map(([key]) => camelToSnake(key))
+const quoteProductColumnKeys = supplierProductColumnKeys.filter(key => key !== 'price_valid_until')
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
 const tableColumns = {
-  internal: ['id', ...productColumnKeys, 'created_at', 'updated_at'],
-  priceTrend: ['brand', 'code', 'craft_material', 'spec_model', ...priceTrendOrderFields.map(([key]) => key)],
-  supplier: ['id', 'status', ...supplierProductColumnKeys, 'supplier_username', 'created_at', 'updated_at'],
-  orders: ['id', 'order_no', 'customer_username', 'status', 'created_at', 'updated_at'],
-  customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'created_at', 'updated_at'],
-  quotes: ['id', 'order_no', 'customer_username', 'supplier_username', 'status', 'updated_at'],
+  internal: ['id', ...productColumnKeys, 'updated_at'],
+  supplier: ['id', 'status', ...supplierProductColumnKeys, 'supplier_username', 'updated_at'],
+  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
+  customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
+  quotes: ['id', 'status', ...quoteProductColumnKeys, 'supplier_username', 'updated_at'],
   pricingAudit: [
-    'order_no', 'customer_username', 'code', 'new_code', 'spec_model',
+    'customer_username', 'code', 'new_code', 'spec_model', 'price_source_status', 'valid_price',
     'ref_price_1', 'supplier_1', 'ref_price_2', 'supplier_2', 'ref_price_3', 'supplier_3',
-    'ref_price_4', 'supplier_4', 'ref_price_5', 'supplier_5', 'pricing_status'
+    'ref_price_4', 'supplier_4', 'ref_price_5', 'supplier_5', 'price_valid_until', 'pricing_status'
   ],
   users: ['id', 'username', 'role', 'enabled', 'created_at', 'updated_at']
 }
@@ -100,7 +105,9 @@ const state = reactive({
   accountEdit: {},
   approve: { id: null, code: '', newCode: '' },
   editRow: {},
+  priceTrendRows: [],
   pricingQuote: {},
+  priceItem: {},
   activeQuoteTitle: '',
   quoteItems: [],
   importFile: null,
@@ -116,13 +123,14 @@ const state = reactive({
   columnOrder: {},
   columnWidths: {},
   dragColumn: '',
+  sidebarCollapsed: false,
+  navOpen: { internal: false },
   linkCounts: { supplier: 0, orders: 0, customerProducts: 0, quotes: 0, pricingAudit: 0 }
 })
 
 const hiddenColumns = ['source_type', 'sourceType', 'serial_no', 'serialNo']
 const activeRows = computed(() => {
   if (state.tab === 'users') return state.users
-  if (state.tab === 'quotes') return groupedQuoteRows(state.rows)
   return state.rows
 })
 const baseColumns = computed(() => (tableColumns[state.tab] || []).filter(key => !hiddenColumns.includes(key)))
@@ -138,10 +146,7 @@ const pagedRows = computed(() => {
   const start = (state.page - 1) * state.pageSize
   return filteredRows.value.slice(start, start + state.pageSize)
 })
-const selectedOrderSet = computed(() => new Set(state.selectedOrders))
 const selectedRowSet = computed(() => new Set(state.selectedRows.map(row => `${row.table}:${row.id}`)))
-const pageOrderNos = computed(() => pagedRows.value.map(orderNoOf).filter(Boolean))
-const pageOrdersChecked = computed(() => pageOrderNos.value.length > 0 && pageOrderNos.value.every(orderNo => selectedOrderSet.value.has(orderNo)))
 const pageRowKeys = computed(() => pagedRows.value.map(row => rowKey(row)).filter(Boolean))
 const pageRowsChecked = computed(() => pageRowKeys.value.length > 0 && pageRowKeys.value.every(key => selectedRowSet.value.has(key)))
 const dataColumnWidths = computed(() => defaultColumnWidths(columns.value))
@@ -154,9 +159,6 @@ const editFields = computed(() => {
   }
   if (state.tab === 'internal') {
     return [...productFields]
-  }
-  if (state.tab === 'priceTrend') {
-    return priceTrendManualFields
   }
   return nonProductFields[state.tab] || []
 })
@@ -282,17 +284,16 @@ async function approveRow() {
 }
 
 async function generateQuotes() {
-  if (!state.selectedOrders.length) {
+  const itemIds = state.selectedRows
+    .filter(row => row.table === 'orders')
+    .map(row => row.id)
+  if (!itemIds.length) {
     toast('请先勾选订单')
     return
   }
-  let total = 0
-  for (const orderNo of state.selectedOrders) {
-    const result = await request.post(`/admin/orders/${orderNo}/generate-quotes`)
-    const count = Number(String(result.message || '').match(/\d+/)?.[0] || 0)
-    total += count
-  }
-  state.selectedOrders = []
+  const result = await request.post('/admin/order-items/generate-quotes', itemIds)
+  const total = Number(String(result.message || '').match(/\d+/)?.[0] || 0)
+  state.selectedRows = state.selectedRows.filter(row => row.table !== 'orders')
   await load()
   await refreshLinkCounts()
   toast(`已生成 ${total} 条供应商报价任务`)
@@ -325,6 +326,10 @@ async function deleteRow(row) {
 }
 
 async function deleteSelectedRows() {
+  if (state.tab === 'orders') {
+    await batchCancelOrderItems()
+    return
+  }
   if (state.tab === 'orders') {
     if (!state.selectedOrders.length) {
       toast('请先勾选要删除的订单')
@@ -360,14 +365,27 @@ async function deleteSelectedRows() {
   toast('已批量删除')
 }
 
-function openOrderDetail(row) {
-  router.push({ name: 'admin-order-detail', params: { orderNo: row.order_no || row.orderNo } })
+function openPriceTrendModal() {
+  if (state.tab !== 'internal') return
+  const selectedIds = new Set(
+    state.selectedRows
+      .filter(row => row.table === 'internal')
+      .map(row => Number(row.id))
+  )
+  if (!selectedIds.size) {
+    toast('请先勾选主表产品')
+    return
+  }
+  state.priceTrendRows = state.rows.filter(row => selectedIds.has(Number(row.id)))
+  if (!state.priceTrendRows.length) {
+    toast('未找到已勾选的主表产品')
+    return
+  }
+  openModal('priceTrend')
 }
 
-function openQuoteProducts(row) {
-  const orderNo = valueOf(row, 'order_no')
-  const supplierUsername = valueOf(row, 'supplier_username')
-  router.push({ name: 'admin-quote-detail', params: { orderNo, supplierUsername } })
+function openOrderDetail(row) {
+  router.push({ name: 'admin-order-detail', params: { orderNo: row.order_no || row.orderNo } })
 }
 
 function selectedQuoteRows() {
@@ -388,21 +406,20 @@ async function downloadAdminQuoteOrders() {
 function openAdminQuoteModal(row) {
   const targetRows = row ? [row] : selectedQuoteRows()
   if (!targetRows.length) {
-    toast('请先勾选要报价的订单')
+    toast('??????????')
     return
   }
-  if (targetRows.length > 1) {
-    toast('一次只能选择一个报价订单')
-    return
-  }
-  const target = targetRows[0]
-  const orderNo = valueOf(target, 'order_no')
-  const supplierUsername = valueOf(target, 'supplier_username')
-  state.activeQuoteTitle = `${orderNo} / ${supplierUsername}`
-  state.quoteItems = state.rows
-    .filter(item => valueOf(item, 'order_no') === orderNo && valueOf(item, 'supplier_username') === supplierUsername)
-    .map(item => ({ ...item }))
+  state.activeQuoteTitle = `${targetRows.length} ?`
+  state.quoteItems = targetRows.map(normalizeQuoteItem)
   openModal('quotePrice')
+}
+
+function normalizeQuoteItem(item) {
+  return {
+    ...item,
+    purchase_price: valueOf(item, 'purchase_price'),
+    purchasePrice: valueOf(item, 'purchase_price')
+  }
 }
 
 async function saveAdminQuoteItems() {
@@ -428,10 +445,10 @@ function openUseSupplierQuote(item) {
     }
   }
   state.pricingQuote = {
-    orderNo: valueOf(item, 'order_no'),
     code: valueOf(item, 'code'),
     options,
-    salePrice: ''
+    salePrice: '',
+    priceValidUntil: valueOf(item, 'price_valid_until')
   }
   openModal('usePrice')
 }
@@ -452,7 +469,8 @@ async function useSupplierQuote(option) {
   }
   await request.put(`/admin/quotes/${option.quoteId}`, {
     purchasePrice: price,
-    salePrice: state.pricingQuote.salePrice
+    salePrice: state.pricingQuote.salePrice,
+    priceValidUntil: state.pricingQuote.priceValidUntil || null
   })
   await request.post(`/admin/quotes/${option.quoteId}/use`)
   state.pricingQuote = {}
@@ -463,11 +481,11 @@ async function useSupplierQuote(option) {
 }
 
 function canBatchDelete() {
-  return state.tab !== 'priceTrend' && state.tab !== 'pricingAudit'
+  return state.tab !== 'pricingAudit'
 }
 
 function canUseTableImport() {
-  return state.tab !== 'users' && state.tab !== 'quotes' && state.tab !== 'priceTrend' && state.tab !== 'pricingAudit'
+  return state.tab !== 'users' && state.tab !== 'quotes' && state.tab !== 'pricingAudit'
 }
 
 async function importAdminQuotePrices() {
@@ -483,6 +501,60 @@ async function importAdminQuotePrices() {
   await load()
   await refreshLinkCounts()
   toast(`导入完成，读取 ${result.total} 行，成功填价 ${result.updated} 行`)
+}
+
+async function batchCancelOrderItems() {
+  const orderItems = state.selectedRows.filter(row => row.table === 'orders')
+  if (!orderItems.length) {
+    toast('请先勾选要作废的产品')
+    return
+  }
+  if (!window.confirm(`确定作废已选的 ${orderItems.length} 个订单产品吗？`)) return
+  for (const row of orderItems) {
+    await request.put(`/admin/order-items/${row.id}/cancel`)
+  }
+  state.selectedRows = state.selectedRows.filter(row => row.table !== 'orders')
+  await load()
+  await refreshLinkCounts()
+  toast('已批量作废')
+}
+
+function openOrderItemPrice(row) {
+  state.priceItem = {
+    id: row.id,
+    code: valueOf(row, 'code'),
+    purchasePrice: valueOf(row, 'purchase_price'),
+    salePrice: valueOf(row, 'sale_price')
+  }
+  openModal('orderItemPrice')
+}
+
+async function saveOrderItemPrice() {
+  if (!state.priceItem.purchasePrice && !state.priceItem.salePrice) {
+    toast('请填写供应价或销售价')
+    return
+  }
+  await request.put(`/admin/order-items/${state.priceItem.id}/prices`, {
+    purchasePrice: state.priceItem.purchasePrice || null,
+    salePrice: state.priceItem.salePrice || null
+  })
+  closeModal()
+  await load()
+  await refreshLinkCounts()
+  toast('价格已保存')
+}
+
+async function cancelOrderItem(row) {
+  if (!orderCanCancel(row)) {
+    toast('当前产品不能作废')
+    return
+  }
+  if (!window.confirm('确定作废这个产品吗？')) return
+  await request.put(`/admin/order-items/${row.id}/cancel`)
+  toggleRowSelection(row, false)
+  await load()
+  await refreshLinkCounts()
+  toast('产品已作废')
 }
 
 async function cancelOrder(row) {
@@ -508,7 +580,7 @@ function orderStatusOf(row) {
 
 function orderCanCancel(row) {
   const status = orderStatusOf(row)
-  return status !== 'QUOTE_GENERATED' && status !== 'CANCELLED' && status !== 'COMPLETED'
+  return status !== 'QUOTE_GENERATED' && status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'QUOTE_COMPLETED'
 }
 
 function toggleOrderSelection(orderNo, checked) {
@@ -593,6 +665,16 @@ function displayValue(row, key) {
   return text || '(空)'
 }
 
+function displayOrderCell(row, key, rowIndex) {
+  if (state.tab === 'orders' && ['order_no', 'customer_username', 'created_at'].includes(key)) {
+    const previous = pagedRows.value[rowIndex - 1]
+    if (previous && orderNoOf(previous) === orderNoOf(row)) {
+      return ''
+    }
+  }
+  return formatCell(valueOf(row, key))
+}
+
 function columnChoices(key) {
   const choices = allColumnValues(key)
   const search = state.filterSearch.trim().toLowerCase()
@@ -612,14 +694,15 @@ function allColumnValues(key) {
 function groupedQuoteRows(rows) {
   const map = new Map()
   rows.forEach(row => {
-    const key = `${valueOf(row, 'order_no')}|${valueOf(row, 'supplier_username')}|${valueOf(row, 'customer_username')}`
+    const key = `${valueOf(row, 'pricing_group') || valueOf(row, 'order_no')}|${valueOf(row, 'supplier_username')}|${valueOf(row, 'code')}`
     const current = map.get(key)
     const status = String(valueOf(row, 'status') || '').toUpperCase()
     if (!current) {
       map.set(key, {
         id: row.id,
-        order_no: valueOf(row, 'order_no'),
-        customer_username: valueOf(row, 'customer_username'),
+        pricing_group: valueOf(row, 'pricing_group'),
+        code: valueOf(row, 'code'),
+        spec_model: valueOf(row, 'spec_model'),
         supplier_username: valueOf(row, 'supplier_username'),
         status: status === 'WAIT_SUPPLIER_PRICE' ? 'WAIT_SUPPLIER_PRICE' : 'SUPPLIER_PRICED',
         updated_at: valueOf(row, 'updated_at')
@@ -789,7 +872,8 @@ function rowStillUnlinked(row) {
 }
 
 function rowNeedsQuote(row) {
-  return String(valueOf(row, 'status') || '').toUpperCase() === 'SUBMITTED'
+  const status = String(valueOf(row, 'status') || '').toUpperCase()
+  return Boolean(valueOf(row, 'code')) && !valueOf(row, 'sale_price') && !['QUOTE_GENERATED', 'CANCELLED', 'COMPLETED', 'QUOTE_COMPLETED'].includes(status)
 }
 
 function rowNeedsSupplierPrice(row) {
@@ -804,18 +888,34 @@ function tabLinkCount(tab) {
   return state.linkCounts[tab] || 0
 }
 
+function fieldInputType(fieldKey) {
+  return fieldKey === 'priceValidUntil' ? 'date' : 'text'
+}
+
+function tabLabel(tab) {
+  return tabs.find(item => item[0] === tab)?.[1] || tab
+}
+
+function navNodeActive(node) {
+  return state.tab === node.tab || Boolean(node.children?.includes(state.tab))
+}
+
+function toggleNavGroup(tab) {
+  state.navOpen[tab] = !state.navOpen[tab]
+}
+
 function statusClass(row, key) {
   if (key !== 'status' && key !== 'pricing_status') return ''
   const status = key === 'pricing_status'
     ? String(valueOf(row, key) || '').toUpperCase()
     : orderStatusOf(row)
   if (status === 'CANCELLED') return 'status-cancelled'
-  if (status === 'COMPLETED') return 'status-completed'
+  if (status === 'QUOTE_COMPLETED' || status === 'COMPLETED') return 'status-completed'
   if (status === 'WAIT_USE_PRICE') return 'status-submitted'
   if (status === 'USED_PRICE') return 'status-completed'
   if (status === 'NOT_USE_PRICE') return 'status-cancelled'
-  if (status === 'SUBMITTED') return 'status-submitted'
-  if (status === 'QUOTE_GENERATED') return 'status-quote'
+  if (status === 'SUBMITTED' || status === 'SUBMITTED_ORDER') return 'status-submitted'
+  if (status === 'QUOTE_GENERATED') return 'status-linked'
   if (status === 'WAIT_SUPPLIER_PRICE') return 'status-submitted'
   if (status === 'SUPPLIER_PRICED') return 'status-quote'
   if (status === 'PENDING' || status === 'WAIT_CODE' || status === 'CODE_NOT_FOUND') return 'status-wait'
@@ -869,6 +969,9 @@ onMounted(async () => {
     <header class="topbar">
       <div><strong>{{ user.username }}</strong><span>总后台</span></div>
       <div class="topbar-actions">
+        <button @click="state.sidebarCollapsed = !state.sidebarCollapsed">
+          {{ state.sidebarCollapsed ? '展开栏目' : '收起栏目' }}
+        </button>
         <button @click="openModal('password')">修改密码</button>
         <button @click="logout">退出</button>
       </div>
@@ -876,28 +979,42 @@ onMounted(async () => {
 
     <p v-if="message" class="notice">{{ message }}</p>
 
-    <section class="dashboard">
-      <aside class="side">
-        <button v-for="tab in tabs" :key="tab[0]" :class="{ active: state.tab === tab[0] }" @click="switchTab(tab[0])">
-          <span>{{ tab[1] }}</span>
-          <em v-if="tabLinkCount(tab[0])">{{ tabLinkCount(tab[0]) }}</em>
-        </button>
+    <section class="dashboard" :class="{ collapsed: state.sidebarCollapsed }">
+      <aside v-if="!state.sidebarCollapsed" class="side">
+        <div v-for="node in navTree" :key="node.tab" class="tree-group">
+          <div class="tree-row">
+            <button class="tree-main" :class="{ active: state.tab === node.tab, 'child-active': navNodeActive(node) && state.tab !== node.tab }" @click="switchTab(node.tab)">
+              <span>{{ tabLabel(node.tab) }}</span>
+              <em v-if="tabLinkCount(node.tab)">{{ tabLinkCount(node.tab) }}</em>
+            </button>
+            <button v-if="node.children?.length" class="tree-toggle" @click.stop="toggleNavGroup(node.tab)">
+              {{ state.navOpen[node.tab] ? '▾' : '▸' }}
+            </button>
+          </div>
+          <div v-if="node.children?.length && state.navOpen[node.tab]" class="tree-children">
+            <button v-for="child in node.children" :key="child" class="tree-child" :class="{ active: state.tab === child }" @click="switchTab(child)">
+              <span>{{ tabLabel(child) }}</span>
+              <em v-if="tabLinkCount(child)">{{ tabLinkCount(child) }}</em>
+            </button>
+          </div>
+        </div>
       </aside>
 
       <div class="content">
         <section class="panel">
           <div class="panel-title-row">
-            <h2>{{ tabs.find(tab => tab[0] === state.tab)?.[1] }}</h2>
+            <h2>{{ tabLabel(state.tab) }}</h2>
             <div class="panel-actions">
               <button v-if="state.tab === 'users'" @click="openModal('account')">新增账号</button>
               <button v-if="state.tab === 'internal'" @click="openModal('master')">
                 新增主表
               </button>
               <button v-if="state.tab === 'orders'" @click="generateQuotes">生成报价任务</button>
-              <button v-if="state.tab === 'quotes'" class="primary" @click="downloadAdminQuoteOrders">下载订单</button>
+              <button v-if="state.tab === 'quotes'" class="primary" @click="downloadAdminQuoteOrders">下载报价表</button>
               <button v-if="state.tab === 'quotes'" class="primary" @click="openModal('quoteImport')">导入表格填价</button>
               <button v-if="state.tab === 'quotes'" class="primary" @click="openAdminQuoteModal()">报价</button>
-              <button v-if="canBatchDelete()" class="danger" @click="deleteSelectedRows">批量删除</button>
+              <button v-if="canBatchDelete()" class="danger" @click="deleteSelectedRows">{{ state.tab === 'orders' ? '批量作废' : '批量删除' }}</button>
+              <button v-if="state.tab === 'internal'" class="primary" @click="openPriceTrendModal">查看价格趋势</button>
               <button v-if="canUseTableImport()" @click="downloadTableTemplate">{{ downloadButtonText() }}</button>
               <button v-if="canUseTableImport()" @click="openModal('import')">{{ importButtonText() }}</button>
             </div>
@@ -918,10 +1035,7 @@ onMounted(async () => {
               </colgroup>
               <thead>
                 <tr>
-                  <th v-if="state.tab === 'orders'" class="check-cell">
-                    <input type="checkbox" :checked="pageOrdersChecked" @change="togglePageOrders($event.target.checked)">
-                  </th>
-                  <th v-else class="check-cell">
+                  <th class="check-cell">
                     <input type="checkbox" :checked="pageRowsChecked" @change="togglePageRows($event.target.checked)">
                   </th>
                   <th
@@ -973,27 +1087,23 @@ onMounted(async () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in pagedRows" :key="`${sourceTableOf(row)}-${row.id}`">
-                  <td v-if="state.tab === 'orders'" class="check-cell">
-                    <input type="checkbox" :checked="selectedOrderSet.has(orderNoOf(row))" @change="toggleOrderSelection(orderNoOf(row), $event.target.checked)">
-                  </td>
-                  <td v-else class="check-cell">
+                <tr v-for="(row, rowIndex) in pagedRows" :key="`${sourceTableOf(row)}-${row.id}`">
+                  <td class="check-cell">
                     <input type="checkbox" :checked="selectedRowSet.has(rowKey(row))" @change="toggleRowSelection(row, $event.target.checked)">
                   </td>
                   <td v-for="key in columns" :key="key">
-                    <span :class="statusClass(row, key)">{{ formatCell(valueOf(row, key)) }}</span>
+                    <span :class="statusClass(row, key)">{{ displayOrderCell(row, key, rowIndex) }}</span>
                   </td>
                   <td class="row-actions action-cell">
                     <button v-if="state.tab === 'users'" @click="openAccountEdit(row)">修改</button>
                     <button v-else-if="state.tab !== 'orders' && state.tab !== 'quotes' && state.tab !== 'pricingAudit'" @click="openEdit(row)">修改</button>
-                    <button v-if="state.tab === 'orders'" @click="openOrderDetail(row)">查看产品</button>
-                    <button v-if="state.tab === 'quotes'" @click="openQuoteProducts(row)">查看产品</button>
+                    <button v-if="state.tab === 'orders'" class="primary" @click="openOrderItemPrice(row)">添加价格</button>
                     <button v-if="state.tab === 'quotes'" class="primary" @click="openAdminQuoteModal(row)">报价</button>
                     <button v-if="state.tab === 'pricingAudit'" class="primary" @click="openUseSupplierQuote(row)">采用价格</button>
                     <button v-if="canLink(row)" @click="openApprove(row)">链接物料编码</button>
-                    <button v-if="state.tab === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrder(row)">整单作废</button>
+                    <button v-if="state.tab === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrderItem(row)">产品作废</button>
                     <button v-else-if="state.tab === 'users'" class="danger" @click="deleteAccount(row.id)">删除</button>
-                    <button v-else-if="state.tab !== 'priceTrend' && state.tab !== 'pricingAudit'" class="danger" @click="deleteRow(row)">删除</button>
+                    <button v-else-if="state.tab !== 'pricingAudit'" class="danger" @click="deleteRow(row)">删除</button>
                   </td>
                 </tr>
               </tbody>
@@ -1002,8 +1112,7 @@ onMounted(async () => {
 
           <div class="pager">
             <span>共 {{ filteredRows.length }} 条</span>
-            <span v-if="state.tab === 'orders'">已选 {{ state.selectedOrders.length }} 单</span>
-            <span v-else>已选 {{ state.selectedRows.length }} 条</span>
+            <span>已选 {{ state.selectedRows.length }} 条</span>
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
@@ -1030,8 +1139,10 @@ onMounted(async () => {
           <h3 v-if="state.modal === 'master'">新增主表记录</h3>
           <h3 v-if="state.modal === 'approve'">链接物料编码</h3>
           <h3 v-if="state.modal === 'edit'">修改记录</h3>
-          <h3 v-if="state.modal === 'quotePrice'">订单报价 {{ state.activeQuoteTitle }}</h3>
+          <h3 v-if="state.modal === 'quotePrice'">报价</h3>
           <h3 v-if="state.modal === 'usePrice'">采用价格</h3>
+          <h3 v-if="state.modal === 'orderItemPrice'">添加价格</h3>
+          <h3 v-if="state.modal === 'priceTrend'">价格趋势</h3>
           <h3 v-if="state.modal === 'quoteImport'">导入表格填价</h3>
           <h3 v-if="state.modal === 'import'">{{ importButtonText() }}</h3>
           <h3 v-if="state.modal === 'password'">修改密码</h3>
@@ -1065,7 +1176,7 @@ onMounted(async () => {
         </div>
 
         <div v-if="state.modal === 'master'" class="modal-body product-form">
-          <input v-for="field in productFields" :key="field[0]" v-model="state.product[field[0]]" :placeholder="field[1]">
+          <input v-for="field in productFields" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
           <button class="primary" @click="addMaster">保存</button>
         </div>
 
@@ -1076,23 +1187,36 @@ onMounted(async () => {
         </div>
 
         <div v-if="state.modal === 'edit'" class="modal-body product-form">
-          <input v-for="field in editFields" :key="field[0]" v-model="state.editRow[field[0]]" :placeholder="field[1]">
+          <input v-for="field in editFields" :key="field[0]" v-model="state.editRow[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
           <button class="primary" @click="saveEdit">保存修改</button>
         </div>
 
-        <div v-if="state.modal === 'quotePrice'" class="modal-body">
+        <div v-if="state.modal === 'quotePrice'" class="modal-body quote-modal">
           <div class="table-wrap compact">
             <table>
               <thead>
-                <tr><th>订单编号</th><th>供应商账号</th><th>物料编码</th><th>规格型号</th><th>供应价</th><th>状态</th></tr>
+                <tr>
+                  <th>{{ columnLabel('supplier_username') }}</th>
+                  <th>{{ columnLabel('brand') }}</th>
+                  <th>{{ columnLabel('code') }}</th>
+                  <th>{{ columnLabel('new_code') }}</th>
+                  <th>{{ columnLabel('craft_material') }}</th>
+                  <th>{{ columnLabel('spec_model') }}</th>
+                  <th>{{ columnLabel('common_model') }}</th>
+                  <th>{{ columnLabel('purchase_price') }}</th>
+                  <th>{{ columnLabel('status') }}</th>
+                </tr>
               </thead>
               <tbody>
                 <tr v-for="item in state.quoteItems" :key="item.id">
-                  <td>{{ item.order_no || item.orderNo }}</td>
                   <td>{{ item.supplier_username || item.supplierUsername }}</td>
+                  <td>{{ item.brand }}</td>
                   <td>{{ item.code }}</td>
+                  <td>{{ item.new_code || item.newCode }}</td>
+                  <td>{{ item.craft_material || item.craftMaterial }}</td>
                   <td>{{ item.spec_model || item.specModel }}</td>
-                  <td><input v-model="item.purchase_price" placeholder="供应价"></td>
+                  <td>{{ item.common_model || item.commonModel }}</td>
+                  <td><input v-model="item.purchase_price" :placeholder="columnLabel('purchase_price')"></td>
                   <td><span :class="statusClass(item, 'status')">{{ formatCell(item.status) }}</span></td>
                 </tr>
               </tbody>
@@ -1105,8 +1229,8 @@ onMounted(async () => {
 
         <div v-if="state.modal === 'usePrice'" class="modal-body">
           <div class="form-grid">
-            <input :value="state.pricingQuote.orderNo" disabled>
             <input v-model="state.pricingQuote.salePrice" placeholder="销售价">
+            <input v-model="state.pricingQuote.priceValidUntil" type="date" placeholder="价格有效期限">
           </div>
           <div class="table-wrap compact price-option-table">
             <table>
@@ -1117,7 +1241,7 @@ onMounted(async () => {
                 <tr v-for="option in state.pricingQuote.options" :key="option.quoteId">
                   <td>{{ state.pricingQuote.code }}</td>
                   <td>{{ option.supplierUsername }}</td>
-                  <td>{{ option.purchasePrice }}</td>
+                  <td><input v-model="option.purchasePrice" placeholder="参考价格"></td>
                   <td class="row-actions action-cell">
                     <button class="primary" @click="useSupplierQuote(option)">采用价格</button>
                   </td>
@@ -1129,6 +1253,39 @@ onMounted(async () => {
             </table>
           </div>
         </div>
+
+        <div v-if="state.modal === 'priceTrend'" class="modal-body price-trend-modal">
+          <div class="table-wrap compact">
+            <table>
+              <thead>
+                <tr>
+                  <th>品牌</th>
+                  <th>物料编码</th>
+                  <th>工艺/材质</th>
+                  <th>规格型号</th>
+                  <th v-for="field in priceTrendOrderFields" :key="field[0]" class="price-trend-cell">{{ field[1] }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in state.priceTrendRows" :key="row.id">
+                  <td>{{ row.brand }}</td>
+                  <td>{{ row.code }}</td>
+                  <td>{{ row.craft_material || row.craftMaterial }}</td>
+                  <td>{{ row.spec_model || row.specModel }}</td>
+                  <td v-for="field in priceTrendOrderFields" :key="field[0]" class="price-trend-cell">{{ formatCell(valueOf(row, field[0])) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div v-if="state.modal === 'orderItemPrice'" class="modal-body form-grid">
+          <input :value="state.priceItem.code" disabled>
+          <input v-model="state.priceItem.purchasePrice" placeholder="供应价">
+          <input v-model="state.priceItem.salePrice" placeholder="销售价">
+          <button class="primary" @click="saveOrderItemPrice">保存价格</button>
+        </div>
+
 
         <div v-if="state.modal === 'quoteImport'" class="modal-body form-grid">
           <input type="file" accept=".xlsx" @change="state.importFile = $event.target.files[0]">

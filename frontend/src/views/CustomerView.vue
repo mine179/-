@@ -10,7 +10,7 @@ const router = useRouter()
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
 
-const hiddenColumns = ['serial_no', 'serialNo', 'code', 'newCode', 'new_code', 'purchase_price', 'purchasePrice']
+const hiddenColumns = ['serial_no', 'serialNo', 'code', 'newCode', 'new_code', 'purchase_price', 'purchasePrice', 'customer_username', 'customerUsername']
 const internalHiddenColumns = [
   ...hiddenColumns,
   'master_product_id',
@@ -33,9 +33,9 @@ const views = [
 ]
 
 const tableColumns = {
-  orders: ['id', 'order_no', 'customer_username', 'status', 'created_at', 'updated_at'],
-  products: ['id', 'status', ...customerProductColumnKeys, 'customer_username', 'created_at', 'updated_at'],
-  internal: ['id', ...productColumnKeys, 'created_at', 'updated_at']
+  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
+  products: ['id', 'status', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
+  internal: ['id', ...productColumnKeys, 'updated_at']
 }
 
 const state = reactive({
@@ -57,7 +57,8 @@ const state = reactive({
   filterMenuStyle: {},
   columnOrder: {},
   columnWidths: {},
-  dragColumn: ''
+  dragColumn: '',
+  sidebarCollapsed: false
 })
 
 const sourceRows = computed(() => {
@@ -135,19 +136,22 @@ async function addOrder() {
   state.product = {}
   state.modal = ''
   await switchView('orders')
-  toast(`订单已新增：${result.orderNo}`)
+  toast(`\u8ba2\u5355\u5df2\u65b0\u589e\uff1a${result.orderNo}`)
 }
+
 
 async function orderFromInternal() {
   if (!state.selectedInternal.length) {
-    toast('请先勾选主表产品')
+    toast('\u8bf7\u5148\u52fe\u9009\u4e3b\u8868\u4ea7\u54c1')
     return
   }
+  if (!window.confirm(`\u786e\u5b9a\u5c06\u5df2\u9009\u7684 ${state.selectedInternal.length} \u4e2a\u4e3b\u8868\u4ea7\u54c1\u4e0b\u5355\u5417\uff1f`)) return
   const result = await request.post('/customer/orders/from-internal', state.selectedInternal)
   state.selectedInternal = []
   await switchView('orders')
-  toast(`下单完成：${result.orderNo}，共 ${result.total} 条`)
+  toast(`\u4e0b\u5355\u5b8c\u6210\uff1a${result.orderNo}\uff0c\u5171 ${result.total} \u6761\u4ea7\u54c1`)
 }
+
 
 function toggleInternal(id, checked) {
   const set = new Set(state.selectedInternal)
@@ -173,19 +177,20 @@ function orderStatusOf(row) {
 
 function orderCanCancel(row) {
   const status = orderStatusOf(row)
-  return status !== 'QUOTE_GENERATED' && status !== 'CANCELLED' && status !== 'COMPLETED'
+  return status !== 'QUOTE_GENERATED' && status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'QUOTE_COMPLETED'
 }
 
-async function cancelOrder(row) {
+async function cancelOrderItem(row) {
   if (!orderCanCancel(row)) {
-    toast('已生成报价任务的订单不能作废')
+    toast('\u5f53\u524d\u4ea7\u54c1\u4e0d\u80fd\u4f5c\u5e9f')
     return
   }
-  if (!window.confirm('确定作废整个订单吗？订单里的产品也会一起作废。')) return
-  await request.put(`/customer/orders/${valueOf(row, 'order_no')}/cancel`)
+  if (!window.confirm('\u786e\u5b9a\u4f5c\u5e9f\u8fd9\u4e2a\u4ea7\u54c1\u5417\uff1f')) return
+  await request.put(`/customer/order-items/${row.id}/cancel`)
   await loadCurrent()
-  toast('订单已作废')
+  toast('\u4ea7\u54c1\u5df2\u4f5c\u5e9f')
 }
+
 
 function openProductEdit(row) {
   state.product = { ...row }
@@ -237,13 +242,27 @@ function displayValue(row, key) {
   return text || '(空)'
 }
 
+function orderNoOf(row) {
+  return valueOf(row, 'order_no') || valueOf(row, 'orderNo')
+}
+
+function displayOrderCell(row, key, rowIndex) {
+  if (state.view === 'orders' && ['order_no', 'customer_username', 'created_at'].includes(key)) {
+    const previous = pagedRows.value[rowIndex - 1]
+    if (previous && orderNoOf(previous) === orderNoOf(row)) {
+      return ''
+    }
+  }
+  return formatCell(valueOf(row, key))
+}
+
 function statusClass(row, key) {
   if (key !== 'status') return ''
   const status = orderStatusOf(row)
   if (status === 'CANCELLED') return 'status-cancelled'
-  if (status === 'COMPLETED') return 'status-completed'
-  if (status === 'SUBMITTED') return 'status-submitted'
-  if (status === 'QUOTE_GENERATED') return 'status-quote'
+  if (status === 'QUOTE_COMPLETED' || status === 'COMPLETED') return 'status-completed'
+  if (status === 'SUBMITTED' || status === 'SUBMITTED_ORDER') return 'status-submitted'
+  if (status === 'QUOTE_GENERATED') return 'status-linked'
   if (status === 'PENDING' || status === 'WAIT_CODE') return 'status-wait'
   if (status === 'APPROVED' || status === 'ACTIVE') return 'status-linked'
   return ''
@@ -395,14 +414,17 @@ onMounted(async () => {
     <header class="topbar">
       <div><strong>{{ user.username }}</strong><span>客户</span></div>
       <div class="topbar-actions">
+        <button @click="state.sidebarCollapsed = !state.sidebarCollapsed">
+          {{ state.sidebarCollapsed ? '展开栏目' : '收起栏目' }}
+        </button>
         <button @click="state.modal = 'password'">修改密码</button>
         <button @click="logout">退出</button>
       </div>
     </header>
     <p v-if="message" class="notice">{{ message }}</p>
 
-    <section class="dashboard">
-      <aside class="side">
+    <section class="dashboard" :class="{ collapsed: state.sidebarCollapsed }">
+      <aside v-if="!state.sidebarCollapsed" class="side">
         <button v-for="view in views" :key="view[0]" :class="{ active: state.view === view[0] }" @click="switchView(view[0])">
           <span>{{ view[1] }}</span>
         </button>
@@ -486,16 +508,15 @@ onMounted(async () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in pagedRows" :key="row.id">
+                <tr v-for="(row, rowIndex) in pagedRows" :key="row.id">
                   <td v-if="state.view === 'internal'" class="check-cell">
                     <input type="checkbox" :checked="selectedInternalSet.has(row.id)" @change="toggleInternal(row.id, $event.target.checked)">
                   </td>
                   <td v-for="key in columns" :key="key">
-                    <span :class="statusClass(row, key)">{{ formatCell(valueOf(row, key)) }}</span>
+                    <span :class="statusClass(row, key)">{{ displayOrderCell(row, key, rowIndex) }}</span>
                   </td>
                   <td v-if="state.view !== 'internal'" class="row-actions action-cell">
-                    <button v-if="state.view === 'orders'" @click="openOrderDetail(row)">查看产品</button>
-                    <button v-if="state.view === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrder(row)">整单作废</button>
+                    <button v-if="state.view === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrderItem(row)">产品作废</button>
                     <button v-if="state.view === 'products'" @click="openProductEdit(row)">修改名称</button>
                   </td>
                 </tr>

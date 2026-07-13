@@ -212,10 +212,25 @@ button.danger {
   gap: 18px;
 }
 
+.dashboard.collapsed {
+  grid-template-columns: 1fr;
+}
+
 .side {
   display: grid;
   align-content: start;
   gap: 8px;
+}
+
+.tree-group {
+  display: grid;
+  gap: 6px;
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 6px;
 }
 
 .side button {
@@ -224,6 +239,30 @@ button.danger {
   justify-content: space-between;
   gap: 10px;
   text-align: left;
+}
+
+.side .tree-toggle {
+  justify-content: center;
+  padding: 0;
+  color: #536274;
+}
+
+.side .tree-main.child-active {
+  border-color: #9fc1dd;
+  background: #eef7ff;
+}
+
+.tree-children {
+  display: grid;
+  gap: 6px;
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 1px solid #d8e3ee;
+}
+
+.side .tree-child {
+  min-height: 36px;
+  font-size: 14px;
 }
 
 .side button em {
@@ -291,6 +330,24 @@ button.danger {
   margin-top: 12px;
 }
 
+.price-trend-modal .table-wrap {
+  overflow: auto;
+}
+
+.price-trend-modal table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.price-trend-cell {
+  width: 220px;
+  min-width: 220px;
+  max-width: none;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;
@@ -312,6 +369,14 @@ button.danger {
   padding: 20px;
 }
 
+.modal:has(.price-trend-modal) {
+  width: min(1500px, 96vw);
+}
+
+.modal:has(.quote-modal) {
+  width: min(1400px, 96vw);
+}
+
 .modal-body {
   padding-top: 4px;
 }
@@ -324,6 +389,11 @@ button.danger {
 
 .table-wrap.compact {
   max-height: 300px;
+}
+
+.quote-modal.table-wrap,
+.quote-modal .table-wrap {
+  max-height: 560px;
 }
 
 .order-detail-table {
@@ -349,11 +419,15 @@ button.danger {
 
 .check-cell {
   width: 46px;
+  min-width: 46px;
+  max-width: 46px;
   text-align: center;
+  overflow: visible;
 }
 
 .check-cell input {
   min-height: auto;
+  width: auto;
 }
 
 table {
@@ -547,21 +621,25 @@ td input {
 .select-col {
   width: 46px;
   min-width: 46px;
+  max-width: 46px;
 }
 
 .action-col {
   width: 220px;
   min-width: 220px;
+  max-width: 220px;
 }
 
 .action-col-wide {
   width: 300px;
   min-width: 300px;
+  max-width: 300px;
 }
 
 .action-cell {
   width: 220px;
   min-width: 220px;
+  max-width: 300px;
   overflow: visible;
 }
 

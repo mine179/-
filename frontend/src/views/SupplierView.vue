@@ -9,16 +9,19 @@ import { columnStyle, defaultColumnWidths, startColumnResize } from '../utils/co
 const router = useRouter()
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
+const quoteModalTitle = '\u62a5\u4ef7'
+const closeText = '\u5173\u95ed'
 
 const views = [
   ['products', '供应商产品表'],
   ['quotes', '供应商报价表']
 ]
 
-const supplierProductFields = productFields.filter(([key]) => !['newCode', 'salePrice'].includes(key))
+const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice')
+const quoteProductFields = supplierProductFields.filter(([key]) => key !== 'priceValidUntil')
 const productColumns = ['id', 'status', ...supplierProductFields.map(([key]) => key), 'updatedAt']
-const quoteColumns = ['id', 'orderNo', 'customerUsername', 'status', 'updatedAt']
-const quoteItemColumns = ['code', 'specModel', 'purchasePrice', 'status']
+const quoteColumns = ['id', 'status', ...quoteProductFields.map(([key]) => key), 'updatedAt']
+const quoteItemColumns = ['brand', 'code', 'newCode', 'craftMaterial', 'specModel', 'commonModel', 'purchasePrice', 'status']
 
 const state = reactive({
   view: 'products',
@@ -41,7 +44,8 @@ const state = reactive({
   filterMenuStyle: {},
   columnOrder: {},
   columnWidths: {},
-  dragColumn: ''
+  dragColumn: '',
+  sidebarCollapsed: false
 })
 
 const sourceRows = computed(() => state.view === 'quotes' ? state.quoteOrders : state.products)
@@ -66,6 +70,10 @@ const dataColumnWidths = computed(() => defaultColumnWidths(columns.value))
 function toast(text) {
   message.value = text
   setTimeout(() => { if (message.value === text) message.value = '' }, 3000)
+}
+
+function fieldInputType(fieldKey) {
+  return fieldKey === 'priceValidUntil' ? 'date' : 'text'
 }
 
 async function load() {
@@ -115,30 +123,37 @@ async function uploadFile() {
 }
 
 async function openQuoteModal(row) {
-  const orderNo = orderNoOf(row)
-  state.activeOrderNo = orderNo
-  state.quoteItems = await request.get(`/supplier/quote-orders/${orderNo}/items`)
+  const rows = row ? [row] : state.quoteOrders.filter(item => selectedOrderSet.value.has(orderNoOf(item)))
+  if (!rows.length) {
+    toast('??????????')
+    return
+  }
+  state.activeOrderNo = `${rows.length} ?`
+  state.quoteItems = rows.map(normalizeQuoteItem)
   state.modal = 'quote'
 }
 
-function openQuoteDetail(row) {
-  router.push({ name: 'supplier-quote-detail', params: { orderNo: orderNoOf(row) } })
+function normalizeQuoteItem(item) {
+  return {
+    ...item,
+    purchasePrice: valueOf(item, 'purchasePrice'),
+    purchase_price: valueOf(item, 'purchasePrice')
+  }
 }
 
 async function openSelectedQuoteModal() {
   if (!state.selectedOrders.length) {
-    toast('请先勾选要报价的订单')
+    toast('??????????')
     return
   }
-  if (state.selectedOrders.length > 1) {
-    toast('一次只能选择一个订单报价')
-    return
-  }
-  await openQuoteModal({ orderNo: state.selectedOrders[0] })
+  await openQuoteModal()
 }
 
 async function saveQuoteItems() {
-  await request.put('/supplier/quotes/batch', state.quoteItems)
+  await request.put('/supplier/quotes/batch', state.quoteItems.map(item => ({
+    id: item.id,
+    purchasePrice: item.purchasePrice ?? item.purchase_price
+  })))
   state.modal = ''
   await load()
   toast('报价已保存')
@@ -146,11 +161,16 @@ async function saveQuoteItems() {
 
 async function downloadSelectedOrders() {
   if (!state.selectedOrders.length) {
-    toast('请先勾选要下载的订单')
+    toast('请先勾选要下载的报价')
     return
   }
-  const response = await request.post('/supplier/quote-orders/download', state.selectedOrders, { responseType: 'blob' })
-  downloadBlob(response.data, '供应商报价订单.xlsx')
+  const selectedKeys = new Set(state.selectedOrders)
+  const downloadKeys = state.quoteOrders
+    .filter(row => selectedKeys.has(orderNoOf(row)))
+    .map(row => valueOf(row, 'pricingGroup') || valueOf(row, 'orderNo'))
+    .filter(Boolean)
+  const response = await request.post('/supplier/quote-orders/download', Array.from(new Set(downloadKeys)), { responseType: 'blob' })
+  downloadBlob(response.data, '供应商报价表.xlsx')
 }
 
 async function importQuotePrices() {
@@ -310,7 +330,7 @@ function togglePageOrders(checked) {
 }
 
 function orderNoOf(row) {
-  return row?.order_no || row?.orderNo || ''
+  return String(row?.id || '')
 }
 
 function statusClass(row, key) {
@@ -380,14 +400,17 @@ onMounted(load)
     <header class="topbar">
       <div><strong>{{ user.username }}</strong><span>供应商</span></div>
       <div class="topbar-actions">
+        <button @click="state.sidebarCollapsed = !state.sidebarCollapsed">
+          {{ state.sidebarCollapsed ? '展开栏目' : '收起栏目' }}
+        </button>
         <button @click="state.modal = 'password'">修改密码</button>
         <button @click="logout">退出</button>
       </div>
     </header>
     <p v-if="message" class="notice">{{ message }}</p>
 
-    <section class="dashboard">
-      <aside class="side">
+    <section class="dashboard" :class="{ collapsed: state.sidebarCollapsed }">
+      <aside v-if="!state.sidebarCollapsed" class="side">
         <button v-for="view in views" :key="view[0]" :class="{ active: state.view === view[0] }" @click="switchView(view[0])">
           <span>{{ view[1] }}</span>
         </button>
@@ -401,7 +424,7 @@ onMounted(load)
               <button v-if="state.view === 'products'" @click="downloadTemplate">下载模板</button>
               <button v-if="state.view === 'products'" @click="state.modal = 'upload'">导入 Excel</button>
               <button v-if="state.view === 'products'" @click="state.modal = 'product'">提交产品</button>
-              <button v-if="state.view === 'quotes'" class="primary" @click="downloadSelectedOrders">下载订单</button>
+              <button v-if="state.view === 'quotes'" class="primary" @click="downloadSelectedOrders">下载报价表</button>
               <button v-if="state.view === 'quotes'" class="primary" @click="state.modal = 'quoteImport'">导入表格填价</button>
               <button v-if="state.view === 'quotes'" class="primary" @click="openSelectedQuoteModal">报价</button>
             </div>
@@ -482,7 +505,6 @@ onMounted(load)
                     <span :class="statusClass(row, key)">{{ formatCell(valueOf(row, key)) }}</span>
                   </td>
                   <td v-if="state.view === 'quotes'" class="row-actions action-cell">
-                    <button @click="openQuoteDetail(row)">查看产品</button>
                     <button class="primary" @click="openQuoteModal(row)">报价</button>
                   </td>
                 </tr>
@@ -492,7 +514,7 @@ onMounted(load)
 
           <div class="pager">
             <span>共 {{ filteredRows.length }} 条</span>
-            <span v-if="state.view === 'quotes'">已选 {{ state.selectedOrders.length }} 单</span>
+            <span v-if="state.view === 'quotes'">已选 {{ state.selectedOrders.length }} 条</span>
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
@@ -513,8 +535,8 @@ onMounted(load)
 
     <div v-if="state.modal === 'quote'" class="modal-mask" @click.self="state.modal = ''">
       <section class="modal">
-        <header class="modal-head"><h3>订单报价 {{ state.activeOrderNo }}</h3><button @click="state.modal = ''">关闭</button></header>
-        <div class="table-wrap compact">
+        <header class="modal-head"><h3>{{ quoteModalTitle }}</h3><button @click="state.modal = ''">{{ closeText }}</button></header>
+        <div class="table-wrap compact quote-modal">
           <table>
             <colgroup>
               <col v-for="key in quoteItemColumns" :key="key" :style="quoteItemHeaderStyle(key)">
@@ -529,10 +551,14 @@ onMounted(load)
             </thead>
             <tbody>
               <tr v-for="item in state.quoteItems" :key="item.id">
-                <td>{{ item.code }}</td>
-                <td>{{ item.specModel }}</td>
+                <td>{{ valueOf(item, 'brand') }}</td>
+                <td>{{ valueOf(item, 'code') }}</td>
+                <td>{{ valueOf(item, 'newCode') }}</td>
+                <td>{{ valueOf(item, 'craftMaterial') }}</td>
+                <td>{{ valueOf(item, 'specModel') }}</td>
+                <td>{{ valueOf(item, 'commonModel') }}</td>
                 <td><input v-model="item.purchasePrice"></td>
-                <td><span :class="statusClass(item, 'status')">{{ formatCell(item.status) }}</span></td>
+                <td><span :class="statusClass(item, 'status')">{{ formatCell(valueOf(item, 'status')) }}</span></td>
               </tr>
             </tbody>
           </table>
@@ -547,7 +573,7 @@ onMounted(load)
       <section class="modal">
         <header class="modal-head"><h3>提交产品</h3><button @click="state.modal = ''">关闭</button></header>
         <div class="modal-body product-form">
-          <input v-for="field in supplierProductFields" :key="field[0]" v-model="state.product[field[0]]" :placeholder="field[1]">
+          <input v-for="field in supplierProductFields" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
           <button class="primary" @click="submitProduct">提交审核</button>
         </div>
       </section>

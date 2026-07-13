@@ -21,12 +21,14 @@ public class Product {
     private String modelRemark;
     private BigDecimal salePrice;
     private BigDecimal purchasePrice;
+    private LocalDate priceValidUntil;
     private LocalDate updateDate;
     private String supplierUsername;
     private String customerUsername;
     private String sourceType;
     private String status;
     private String orderNo;
+    private String pricingGroup;
     private Boolean matched;
     private Long masterProductId;
     private Long linkedMasterProductId;
@@ -65,6 +67,8 @@ public class Product {
     public void setSalePrice(BigDecimal salePrice) { this.salePrice = salePrice; }
     public BigDecimal getPurchasePrice() { return purchasePrice; }
     public void setPurchasePrice(BigDecimal purchasePrice) { this.purchasePrice = purchasePrice; }
+    public LocalDate getPriceValidUntil() { return priceValidUntil; }
+    public void setPriceValidUntil(LocalDate priceValidUntil) { this.priceValidUntil = priceValidUntil; }
     public LocalDate getUpdateDate() { return updateDate; }
     public void setUpdateDate(LocalDate updateDate) { this.updateDate = updateDate; }
     public String getSupplierUsername() { return supplierUsername; }
@@ -77,6 +81,8 @@ public class Product {
     public void setStatus(String status) { this.status = status; }
     public String getOrderNo() { return orderNo; }
     public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+    public String getPricingGroup() { return pricingGroup; }
+    public void setPricingGroup(String pricingGroup) { this.pricingGroup = pricingGroup; }
     public Boolean getMatched() { return matched; }
     public void setMatched(Boolean matched) { this.matched = matched; }
     public Long getMasterProductId() { return masterProductId; }

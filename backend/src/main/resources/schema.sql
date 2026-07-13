@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS master_products (
     model_remark VARCHAR(500),
     sale_price DECIMAL(14,2),
     purchase_price DECIMAL(14,2),
+    price_valid_until DATE,
     update_date DATE,
     supplier_username VARCHAR(80),
     customer_username VARCHAR(80),
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS master_products (
 ALTER TABLE master_products ADD COLUMN IF NOT EXISTS customer_username VARCHAR(80);
 ALTER TABLE master_products ADD COLUMN IF NOT EXISTS order_no VARCHAR(60);
 ALTER TABLE master_products ADD COLUMN IF NOT EXISTS linked_master_product_id BIGINT;
+ALTER TABLE master_products ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS internal_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -83,6 +85,7 @@ ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_2 VARCHAR(160
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_3 VARCHAR(160);
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_4 VARCHAR(160);
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_5 VARCHAR(160);
+ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS supplier_submissions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -109,6 +112,7 @@ CREATE TABLE IF NOT EXISTS supplier_submissions (
 );
 
 ALTER TABLE supplier_submissions ADD COLUMN IF NOT EXISTS master_product_id BIGINT;
+ALTER TABLE supplier_submissions ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS customer_orders (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -145,6 +149,8 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS status VARCHAR(30) DEFAULT 'ACTIVE';
+ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS pricing_group VARCHAR(80);
+ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS customer_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -175,6 +181,7 @@ SET status='APPROVED',
     matched=true,
     updated_at=CURRENT_TIMESTAMP
 WHERE status='ACTIVE';
+ALTER TABLE customer_products ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS unmatched_customer_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -202,6 +209,7 @@ CREATE TABLE IF NOT EXISTS unmatched_customer_items (
 );
 
 ALTER TABLE unmatched_customer_items ADD COLUMN IF NOT EXISTS master_product_id BIGINT;
+ALTER TABLE unmatched_customer_items ADD COLUMN IF NOT EXISTS price_valid_until DATE;
 
 CREATE TABLE IF NOT EXISTS supplier_quotes (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -220,3 +228,5 @@ CREATE TABLE IF NOT EXISTS supplier_quotes (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS pricing_status VARCHAR(30) DEFAULT 'WAIT_USE_PRICE';
+ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS pricing_group VARCHAR(80);
+ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS price_valid_until DATE;

@@ -206,6 +206,13 @@ public class ApiController {
         return Result.success(message(productService.generateQuotes(orderNo)));
     }
 
+    @PostMapping("/admin/order-items/generate-quotes")
+    public Result generateQuotesForItems(@RequestHeader("Authorization") String authorization,
+                                         @RequestBody List<Long> itemIds) {
+        userService.requireRole(authorization, "ADMIN");
+        return Result.success(message(productService.generateQuotesForItems(itemIds)));
+    }
+
     @PutMapping("/admin/quotes/{id}")
     public Result adminUpdateQuote(@RequestHeader("Authorization") String authorization,
                                    @PathVariable Long id,

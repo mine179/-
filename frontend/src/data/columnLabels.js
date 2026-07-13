@@ -69,7 +69,13 @@ export const columnLabels = {
   ref_price_4: '参考价格4',
   supplier_4: '供应商4',
   ref_price_5: '参考价格5',
-  supplier_5: '供应商5'
+  supplier_5: '供应商5',
+  priceValidUntil: '\u4ef7\u683c\u6709\u6548\u671f\u9650',
+  price_valid_until: '\u4ef7\u683c\u6709\u6548\u671f\u9650',
+  pricingGroup: '\u5b9a\u4ef7\u5206\u7ec4',
+  pricing_group: '\u5b9a\u4ef7\u5206\u7ec4',
+  price_source_status: '\u4ef7\u683c\u6765\u6e90',
+  valid_price: '\u6709\u6548\u671f\u5185\u4ef7\u683c'
 }
 
 export function columnLabel(key) {
@@ -82,7 +88,9 @@ const statusLabels = {
   CODE_NOT_FOUND: '系统无该物料编码',
   APPROVED: '已链接',
   SUBMITTED: '已提交',
+  SUBMITTED_ORDER: '\u5df2\u63d0\u4ea4\u8ba2\u5355',
   QUOTE_GENERATED: '已生成报价任务',
+  QUOTE_COMPLETED: '\u5df2\u5b8c\u6210\u62a5\u4ef7',
   COMPLETED: '已完成订单',
   ACTIVE: '正常',
   CANCELLED: '已作废',
@@ -91,7 +99,9 @@ const statusLabels = {
   WAIT_USE_PRICE: '待采用价格',
   USED_PRICE: '已采用价格',
   NOT_USE_PRICE: '不采用价格',
-  MANUAL: '手动'
+  MANUAL: '手动',
+  VALID_PRICE: '\u6709\u6548\u671f\u5185\u4ef7\u683c',
+  NO_VALID_PRICE: '\u65e0\u6709\u6548\u671f\u4ef7\u683c'
 }
 
 export function formatCell(value) {

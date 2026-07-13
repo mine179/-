@@ -59,6 +59,9 @@ public interface ProductMapper {
     Product findSupplierSubmissionBySpecAndSupplier(@Param("specModel") String specModel,
                                                     @Param("supplierUsername") String supplierUsername);
 
+    Product findSupplierSubmissionBySupplierAndCode(@Param("supplierUsername") String supplierUsername,
+                                                    @Param("code") String code);
+
     Product findCustomerProductByCode(@Param("customerUsername") String customerUsername, @Param("code") String code);
 
     Product findCustomerProductByModels(@Param("customerUsername") String customerUsername,
@@ -73,11 +76,15 @@ public interface ProductMapper {
 
     List<Product> listMatchedOrderItems(String orderNo);
 
+    List<Map<String, Object>> listAdminOrderRows();
+
     List<Product> listAdminOrderItems(String orderNo);
 
     List<Product> listSupplierSubmissions(String supplierUsername);
 
     List<SupplierQuote> listSupplierQuotes(String supplierUsername);
+
+    List<Map<String, Object>> listAdminSupplierQuoteRows();
 
     List<Map<String, Object>> listSupplierQuoteOrders(String supplierUsername);
 
@@ -92,7 +99,7 @@ public interface ProductMapper {
 
     List<Map<String, Object>> listPricingAuditRows();
 
-    List<CustomerOrder> listCustomerOrders(String customerUsername);
+    List<Product> listCustomerOrders(String customerUsername);
 
     List<Product> listCustomerOrderItems(@Param("orderNo") String orderNo, @Param("customerUsername") String customerUsername);
 
@@ -112,7 +119,16 @@ public interface ProductMapper {
                                        @Param("purchasePrice") java.math.BigDecimal purchasePrice,
                                        @Param("salePrice") java.math.BigDecimal salePrice);
 
+    void assignCustomerOrderItemPricingGroup(@Param("id") Long id, @Param("pricingGroup") String pricingGroup);
+
     void markCustomerOrderQuoted(String orderNo);
+
+    void markCustomerOrderItemQuoted(Long id);
+
+    void markCustomerOrderItemsCompletedByGroup(@Param("pricingGroup") String pricingGroup,
+                                                @Param("code") String code,
+                                                @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                                @Param("salePrice") java.math.BigDecimal salePrice);
 
     void markCustomerOrderCompletedIfReady(String orderNo);
 
@@ -120,7 +136,8 @@ public interface ProductMapper {
 
     void markOtherQuotePricingNotUsed(@Param("id") Long id,
                                       @Param("orderNo") String orderNo,
-                                      @Param("code") String code);
+                                      @Param("code") String code,
+                                      @Param("pricingGroup") String pricingGroup);
 
     void updateCustomerProductByCustomer(Product product);
 
@@ -152,7 +169,12 @@ public interface ProductMapper {
 
     void updateInternalPricesByCode(@Param("code") String code,
                                     @Param("purchasePrice") java.math.BigDecimal purchasePrice,
-                                    @Param("salePrice") java.math.BigDecimal salePrice);
+                                    @Param("salePrice") java.math.BigDecimal salePrice,
+                                    @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
+
+    void updateInternalSupplierPriceIfCheaper(@Param("code") String code,
+                                              @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                              @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
 
     void updateMasterById(Product product);
 

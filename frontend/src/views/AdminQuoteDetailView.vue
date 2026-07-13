@@ -13,7 +13,7 @@ const orderNo = computed(() => route.params.orderNo)
 const supplierUsername = computed(() => route.params.supplierUsername)
 
 const columns = [
-  'id', 'order_no', 'customer_username', 'supplier_username', 'brand', 'code', 'new_code',
+  'id', 'supplier_username', 'brand', 'code', 'new_code',
   'color', 'category', 'craft_material', 'spec_model', 'common_model', 'size_value',
   'resolution', 'model_remark', 'purchase_price', 'status', 'updated_at'
 ]

@@ -36,6 +36,8 @@ public interface ProductService {
 
     String generateQuotes(String orderNo);
 
+    String generateQuotesForItems(List<Long> itemIds);
+
     void adminUpdateQuote(Long id, SupplierQuote quote);
 
     void adminUpdateQuoteBatch(List<SupplierQuote> quotes);

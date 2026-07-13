@@ -20,7 +20,7 @@ const state = reactive({
   columnWidths: {}
 })
 const quoteDetailColumns = [
-  'id', 'order_no', 'customer_username', 'brand', 'code', 'new_code',
+  'id', 'brand', 'code', 'new_code',
   'color', 'category', 'craft_material', 'spec_model', 'common_model',
   'size_value', 'resolution', 'model_remark', 'purchase_price', 'status'
 ]

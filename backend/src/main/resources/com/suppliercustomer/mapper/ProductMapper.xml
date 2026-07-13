@@ -5,12 +5,12 @@
 <mapper namespace="com.suppliercustomer.mapper.ProductMapper">
     <sql id="productColumns">
         series,brand,code,new_code,color,category,craft_material,spec_model,common_model,
-        size_value,resolution,model_remark,sale_price,purchase_price,update_date
+        size_value,resolution,model_remark,sale_price,purchase_price,price_valid_until,update_date
     </sql>
 
     <sql id="productValues">
         #{series},#{brand},#{code},#{newCode},#{color},#{category},#{craftMaterial},#{specModel},#{commonModel},
-        #{sizeValue},#{resolution},#{modelRemark},#{salePrice},#{purchasePrice},#{updateDate}
+        #{sizeValue},#{resolution},#{modelRemark},#{salePrice},#{purchasePrice},#{priceValidUntil},#{updateDate}
     </sql>
 
     <select id="listTable" resultType="java.util.LinkedHashMap">
@@ -71,8 +71,8 @@
     </insert>
 
     <insert id="insertCustomerOrderItem" parameterType="com.suppliercustomer.pojo.Product">
-        insert into customer_order_items(<include refid="productColumns"/>,order_no,customer_username,matched,master_product_id,status)
-        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{matched},#{masterProductId},#{status})
+        insert into customer_order_items(<include refid="productColumns"/>,order_no,customer_username,matched,master_product_id,status,pricing_group)
+        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{matched},#{masterProductId},#{status},#{pricingGroup})
     </insert>
 
     <insert id="insertCustomerProduct" parameterType="com.suppliercustomer.pojo.Product">
@@ -86,8 +86,8 @@
     </insert>
 
     <insert id="insertSupplierQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
-        insert into supplier_quotes(order_no,customer_item_id,master_product_id,supplier_username,customer_username,code,spec_model,purchase_price,sale_price,status,pricing_status)
-        values(#{orderNo},#{customerItemId},#{masterProductId},#{supplierUsername},#{customerUsername},#{code},#{specModel},#{purchasePrice},#{salePrice},#{status},'WAIT_USE_PRICE')
+        insert into supplier_quotes(order_no,customer_item_id,master_product_id,supplier_username,customer_username,code,pricing_group,spec_model,purchase_price,sale_price,price_valid_until,status,pricing_status)
+        values(#{orderNo},#{customerItemId},#{masterProductId},#{supplierUsername},#{customerUsername},#{code},#{pricingGroup},#{specModel},#{purchasePrice},#{salePrice},#{priceValidUntil},#{status},'WAIT_USE_PRICE')
     </insert>
 
     <select id="findCustomerOrder" resultType="com.suppliercustomer.pojo.CustomerOrder">
@@ -133,6 +133,13 @@
         limit 1
     </select>
 
+    <select id="findSupplierSubmissionBySupplierAndCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions
+        where supplier_username=#{supplierUsername} and code=#{code}
+        order by id
+        limit 1
+    </select>
+
     <select id="findCustomerProductByCode" resultType="com.suppliercustomer.pojo.Product">
         select * from customer_products
         where customer_username=#{customerUsername}
@@ -174,6 +181,11 @@
           and (status is null or status!='CANCELLED')
     </select>
 
+    <select id="listAdminOrderRows" resultType="java.util.LinkedHashMap">
+        select * from customer_order_items
+        order by order_no desc, id asc
+    </select>
+
     <select id="listAdminOrderItems" resultType="com.suppliercustomer.pojo.Product">
         select * from customer_order_items where order_no=#{orderNo} order by id
     </select>
@@ -186,25 +198,67 @@
         select * from supplier_quotes where supplier_username=#{supplierUsername} order by id desc
     </select>
 
+    <select id="listAdminSupplierQuoteRows" resultType="java.util.LinkedHashMap">
+        select q.id,
+               q.pricing_group,
+               q.supplier_username,
+               coalesce(q.code, i.code) code,
+               coalesce(s.new_code, i.new_code) new_code,
+               coalesce(s.series, i.series) series,
+               coalesce(s.brand, i.brand) brand,
+               coalesce(s.color, i.color) color,
+               coalesce(s.category, i.category) category,
+               coalesce(s.craft_material, i.craft_material) craft_material,
+               coalesce(q.spec_model, s.spec_model, i.spec_model) spec_model,
+               coalesce(s.common_model, i.common_model) common_model,
+               coalesce(s.size_value, i.size_value) size_value,
+               coalesce(s.resolution, i.resolution) resolution,
+               coalesce(s.model_remark, i.model_remark) model_remark,
+               q.purchase_price,
+               q.price_valid_until,
+               q.status,
+               q.pricing_status,
+               q.created_at,
+               q.updated_at
+        from supplier_quotes q
+        left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
+        left join customer_order_items i on q.customer_item_id=i.id
+        order by q.id desc
+    </select>
+
     <select id="listSupplierQuoteOrders" resultType="java.util.LinkedHashMap">
-        select min(id) id,
-               order_no,
-               customer_username,
-               case
-                 when sum(case when status='WAIT_SUPPLIER_PRICE' then 1 else 0 end) > 0 then 'WAIT_SUPPLIER_PRICE'
-                 else 'SUPPLIER_PRICED'
-               end status,
-               max(created_at) created_at,
-               max(updated_at) updated_at
-        from supplier_quotes
-        where supplier_username=#{supplierUsername}
-        group by order_no, customer_username
-        order by max(id) desc
+        select q.id,
+               q.pricing_group,
+               q.supplier_username,
+               coalesce(q.code, i.code) code,
+               coalesce(s.new_code, i.new_code) new_code,
+               coalesce(s.series, i.series) series,
+               coalesce(s.brand, i.brand) brand,
+               coalesce(s.color, i.color) color,
+               coalesce(s.category, i.category) category,
+               coalesce(s.craft_material, i.craft_material) craft_material,
+               coalesce(q.spec_model, s.spec_model, i.spec_model) spec_model,
+               coalesce(s.common_model, i.common_model) common_model,
+               coalesce(s.size_value, i.size_value) size_value,
+               coalesce(s.resolution, i.resolution) resolution,
+               coalesce(s.model_remark, i.model_remark) model_remark,
+               q.purchase_price,
+               q.price_valid_until,
+               q.status,
+               q.pricing_status,
+               q.created_at,
+               q.updated_at
+        from supplier_quotes q
+        left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
+        left join customer_order_items i on q.customer_item_id=i.id
+        where q.supplier_username=#{supplierUsername}
+        order by q.id desc
     </select>
 
     <select id="listSupplierQuoteItems" resultType="com.suppliercustomer.pojo.SupplierQuote">
         select * from supplier_quotes
-        where supplier_username=#{supplierUsername} and order_no=#{orderNo}
+        where supplier_username=#{supplierUsername}
+          and (pricing_group=#{orderNo} or order_no=#{orderNo})
         order by id
     </select>
 
@@ -215,26 +269,30 @@
                q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
-               i.new_code,
-               i.series,
-               i.brand,
-               i.color,
-               i.category,
-               i.craft_material,
-               coalesce(q.spec_model, i.spec_model) spec_model,
-               i.common_model,
-               i.size_value,
-               i.resolution,
-               i.model_remark,
+               q.pricing_group,
+               coalesce(s.new_code, i.new_code) new_code,
+               coalesce(s.series, i.series) series,
+               coalesce(s.brand, i.brand) brand,
+               coalesce(s.color, i.color) color,
+               coalesce(s.category, i.category) category,
+               coalesce(s.craft_material, i.craft_material) craft_material,
+               coalesce(q.spec_model, s.spec_model, i.spec_model) spec_model,
+               coalesce(s.common_model, i.common_model) common_model,
+               coalesce(s.size_value, i.size_value) size_value,
+               coalesce(s.resolution, i.resolution) resolution,
+               coalesce(s.model_remark, i.model_remark) model_remark,
                q.purchase_price,
                q.sale_price,
+               q.price_valid_until,
                q.status,
                q.pricing_status,
                q.created_at,
                q.updated_at
         from supplier_quotes q
+        left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
         left join customer_order_items i on q.customer_item_id=i.id
-        where q.supplier_username=#{supplierUsername} and q.order_no=#{orderNo}
+        where q.supplier_username=#{supplierUsername}
+          and (q.pricing_group=#{orderNo} or q.order_no=#{orderNo})
         order by q.id
     </select>
 
@@ -245,26 +303,30 @@
                q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
-               i.new_code,
-               i.series,
-               i.brand,
-               i.color,
-               i.category,
-               i.craft_material,
-               coalesce(q.spec_model, i.spec_model) spec_model,
-               i.common_model,
-               i.size_value,
-               i.resolution,
-               i.model_remark,
+               q.pricing_group,
+               coalesce(s.new_code, i.new_code) new_code,
+               coalesce(s.series, i.series) series,
+               coalesce(s.brand, i.brand) brand,
+               coalesce(s.color, i.color) color,
+               coalesce(s.category, i.category) category,
+               coalesce(s.craft_material, i.craft_material) craft_material,
+               coalesce(q.spec_model, s.spec_model, i.spec_model) spec_model,
+               coalesce(s.common_model, i.common_model) common_model,
+               coalesce(s.size_value, i.size_value) size_value,
+               coalesce(s.resolution, i.resolution) resolution,
+               coalesce(s.model_remark, i.model_remark) model_remark,
                q.purchase_price,
                q.sale_price,
+               q.price_valid_until,
                q.status,
                q.pricing_status,
                q.created_at,
                q.updated_at
         from supplier_quotes q
+        left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
         left join customer_order_items i on q.customer_item_id=i.id
-        where q.supplier_username=#{supplierUsername} and q.order_no=#{orderNo}
+        where q.supplier_username=#{supplierUsername}
+          and (q.pricing_group=#{orderNo} or q.order_no=#{orderNo})
         order by q.id
     </select>
 
@@ -275,34 +337,37 @@
                q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
-               i.new_code,
-               i.series,
-               i.brand,
-               i.color,
-               i.category,
-               i.craft_material,
-               coalesce(q.spec_model, i.spec_model) spec_model,
-               i.common_model,
-               i.size_value,
-               i.resolution,
-               i.model_remark,
+               q.pricing_group,
+               coalesce(s.new_code, i.new_code) new_code,
+               coalesce(s.series, i.series) series,
+               coalesce(s.brand, i.brand) brand,
+               coalesce(s.color, i.color) color,
+               coalesce(s.category, i.category) category,
+               coalesce(s.craft_material, i.craft_material) craft_material,
+               coalesce(q.spec_model, s.spec_model, i.spec_model) spec_model,
+               coalesce(s.common_model, i.common_model) common_model,
+               coalesce(s.size_value, i.size_value) size_value,
+               coalesce(s.resolution, i.resolution) resolution,
+               coalesce(s.model_remark, i.model_remark) model_remark,
                q.purchase_price,
                q.sale_price,
+               q.price_valid_until,
                q.status,
                q.pricing_status,
                q.created_at,
                q.updated_at
         from supplier_quotes q
+        left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
         left join customer_order_items i on q.customer_item_id=i.id
         where q.status='SUPPLIER_PRICED'
         order by q.id desc
     </select>
 
-    <select id="listCustomerOrders" resultType="com.suppliercustomer.pojo.CustomerOrder">
+    <select id="listCustomerOrders" resultType="com.suppliercustomer.pojo.Product">
         select *
-        from customer_orders
+        from customer_order_items
         where customer_username=#{customerUsername}
-        order by id desc
+        order by order_no desc, id asc
     </select>
 
     <select id="listCustomerOrderItems" resultType="com.suppliercustomer.pojo.Product">
@@ -342,12 +407,34 @@
         update customer_order_items
         set purchase_price=#{purchasePrice},
             sale_price=#{salePrice},
+            status=case when #{purchasePrice} is not null and #{salePrice} is not null then 'QUOTE_COMPLETED' else status end,
             updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="assignCustomerOrderItemPricingGroup">
+        update customer_order_items
+        set pricing_group=#{pricingGroup}, updated_at=current_timestamp
         where id=#{id}
     </update>
 
     <update id="markCustomerOrderQuoted">
         update customer_orders set status='QUOTE_GENERATED', updated_at=current_timestamp where order_no=#{orderNo}
+    </update>
+
+    <update id="markCustomerOrderItemQuoted">
+        update customer_order_items set status='QUOTE_GENERATED', updated_at=current_timestamp where id=#{id}
+    </update>
+
+    <update id="markCustomerOrderItemsCompletedByGroup">
+        update customer_order_items
+        set purchase_price=#{purchasePrice},
+            sale_price=#{salePrice},
+            status='QUOTE_COMPLETED',
+            updated_at=current_timestamp
+        where pricing_group=#{pricingGroup}
+          and code=#{code}
+          and (status is null or status!='CANCELLED')
     </update>
 
     <update id="markCustomerOrderCompletedIfReady">
@@ -378,8 +465,11 @@
         update supplier_quotes
         set pricing_status='NOT_USE_PRICE', updated_at=current_timestamp
         where id!=#{id}
-          and order_no=#{orderNo}
           and code=#{code}
+          and (
+            (#{pricingGroup} is not null and #{pricingGroup}!='' and pricing_group=#{pricingGroup})
+            or ((#{pricingGroup} is null or #{pricingGroup}='') and order_no=#{orderNo})
+          )
     </update>
 
     <update id="updateCustomerProductByCustomer" parameterType="com.suppliercustomer.pojo.Product">
@@ -424,7 +514,7 @@
             new_code=#{newCode},
             master_product_id=#{masterProductId},
             matched=true,
-            status='ACTIVE',
+            status='SUBMITTED_ORDER',
             updated_at=current_timestamp
         where customer_username=#{customerUsername}
           and ifnull(spec_model, '')=ifnull(#{specModel}, '')
@@ -442,7 +532,6 @@
         update supplier_quotes
         set purchase_price=#{purchasePrice},status='SUPPLIER_PRICED',updated_at=current_timestamp
         where supplier_username=#{supplierUsername}
-          and order_no=#{orderNo}
           and code=#{code}
     </update>
 
@@ -451,6 +540,7 @@
         <set>
             <if test="purchasePrice != null">purchase_price=#{purchasePrice},</if>
             <if test="salePrice != null">sale_price=#{salePrice},</if>
+            <if test="priceValidUntil != null">price_valid_until=#{priceValidUntil},</if>
             <if test="status != null and status != ''">status=#{status},</if>
             updated_at=current_timestamp
         </set>
@@ -459,7 +549,9 @@
 
     <update id="updateSupplierSubmissionPrice">
         update supplier_submissions
-        set purchase_price=#{purchasePrice}, updated_at=current_timestamp
+        set purchase_price=#{purchasePrice},
+            price_valid_until=null,
+            updated_at=current_timestamp
         where supplier_username=#{supplierUsername}
           and code=#{code}
     </update>
@@ -473,6 +565,7 @@
         <set>
             purchase_price=#{purchasePrice},
             <if test="salePrice != null">sale_price=#{salePrice},</if>
+            status=case when #{purchasePrice} is not null and #{salePrice} is not null then 'QUOTE_COMPLETED' else status end,
             updated_at=current_timestamp
         </set>
         where id=#{customerItemId}
@@ -498,8 +591,19 @@
         update internal_products
         set purchase_price=#{purchasePrice},
             sale_price=#{salePrice},
+            price_valid_until=#{priceValidUntil},
             updated_at=current_timestamp
         where code=#{code}
+    </update>
+
+    <update id="updateInternalSupplierPriceIfCheaper">
+        update internal_products
+        set purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
+            updated_at=current_timestamp
+        where code=#{code}
+          and #{priceValidUntil} is not null
+          and (purchase_price is null or #{purchasePrice} &lt; purchase_price)
     </update>
 
     <update id="updateMasterById" parameterType="com.suppliercustomer.pojo.Product">
@@ -518,6 +622,7 @@
             model_remark=#{modelRemark},
             sale_price=#{salePrice},
             purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
             customer_username=#{customerUsername},
             updated_at=current_timestamp
         where id=#{masterProductId}
@@ -580,6 +685,7 @@
             model_remark=#{modelRemark},
             sale_price=#{salePrice},
             purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
             updated_at=current_timestamp
         where id=#{masterProductId}
     </update>
