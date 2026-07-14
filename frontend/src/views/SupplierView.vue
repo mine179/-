@@ -11,17 +11,17 @@ const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
 const quoteModalTitle = '\u62a5\u4ef7'
 const closeText = '\u5173\u95ed'
+const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
 const views = [
-  ['products', '供应商产品表'],
-  ['quotes', '供应商报价表']
+  ['products', '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868']
 ]
 
-const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice')
+const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && key !== 'priceValidUntil')
 const quoteProductFields = supplierProductFields.filter(([key]) => key !== 'priceValidUntil')
-const productColumns = ['id', 'status', ...supplierProductFields.map(([key]) => key), 'updatedAt']
+const productColumns = ['id', 'link_status', 'quote_status', ...supplierProductFields.map(([key]) => key), 'pending_quote_count', 'updatedAt']
 const quoteColumns = ['id', 'status', ...quoteProductFields.map(([key]) => key), 'updatedAt']
-const quoteItemColumns = ['brand', 'code', 'newCode', 'craftMaterial', 'specModel', 'commonModel', 'purchasePrice', 'status']
+const quoteItemColumns = ['brand', 'code', 'newCode', 'craftMaterial', 'specModel', 'commonModel', 'purchasePrice', 'priceValidUntil']
 
 const state = reactive({
   view: 'products',
@@ -42,14 +42,16 @@ const state = reactive({
   filterMenu: '',
   filterSearch: '',
   filterMenuStyle: {},
+  actionMenu: '',
+  importMode: '',
   columnOrder: {},
   columnWidths: {},
   dragColumn: '',
   sidebarCollapsed: false
 })
 
-const sourceRows = computed(() => state.view === 'quotes' ? state.quoteOrders : state.products)
-const baseColumns = computed(() => state.view === 'quotes' ? quoteColumns : productColumns)
+const sourceRows = computed(() => state.products)
+const baseColumns = computed(() => productColumns)
 const columns = computed(() => {
   const saved = state.columnOrder[state.view] || []
   const known = saved.filter(key => baseColumns.value.includes(key))
@@ -63,7 +65,7 @@ const pagedRows = computed(() => {
   return filteredRows.value.slice(start, start + state.pageSize)
 })
 const selectedOrderSet = computed(() => new Set(state.selectedOrders))
-const pageOrderNos = computed(() => state.view === 'quotes' ? pagedRows.value.map(orderNoOf).filter(Boolean) : [])
+const pageOrderNos = computed(() => pagedRows.value.map(orderNoOf).filter(Boolean))
 const pageOrdersChecked = computed(() => pageOrderNos.value.length > 0 && pageOrderNos.value.every(orderNo => selectedOrderSet.value.has(orderNo)))
 const dataColumnWidths = computed(() => defaultColumnWidths(columns.value))
 
@@ -78,7 +80,6 @@ function fieldInputType(fieldKey) {
 
 async function load() {
   state.products = await request.get('/supplier/submissions')
-  state.quoteOrders = await request.get('/supplier/quote-orders')
   if (state.page > pageTotal.value) state.page = pageTotal.value
 }
 
@@ -104,6 +105,38 @@ async function downloadTemplate() {
   downloadBlob(response.data, '供应商产品上传模板.xlsx')
 }
 
+function selectedProductRows() {
+  const selected = new Set(state.selectedOrders)
+  return state.products.filter(row => selected.has(orderNoOf(row)))
+}
+
+function exportSelectedRows() {
+  const rows = selectedProductRows()
+  if (!rows.length) {
+    toast('\u8bf7\u5148\u52fe\u9009\u8981\u5bfc\u51fa\u7684\u6570\u636e')
+    return
+  }
+  exportRowsAsExcel(rows, columns.value, '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868-\u9009\u4e2d\u6570\u636e.xls')
+}
+
+function exportRowsAsExcel(rows, keys, filename) {
+  const escape = value => String(formatCell(value ?? '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const header = keys.map(key => `<th>${escape(columnLabel(key))}</th>`).join('')
+  const body = rows.map(row => `<tr>${keys.map(key => `<td>${escape(valueOf(row, key))}</td>`).join('')}</tr>`).join('')
+  const html = `<html><head><meta charset="UTF-8"></head><body><table><tr>${header}</tr>${body}</table></body></html>`
+  downloadBlob(new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' }), filename)
+}
+
+function toggleActionMenu(menu) {
+  state.actionMenu = state.actionMenu === menu ? '' : menu
+}
+
+function openImportMode(mode) {
+  state.importMode = mode
+  state.actionMenu = ''
+  state.modal = mode === 'quote' ? 'quoteImport' : 'upload'
+}
+
 async function uploadFile() {
   if (!state.file) {
     toast('请选择 Excel 文件')
@@ -123,9 +156,9 @@ async function uploadFile() {
 }
 
 async function openQuoteModal(row) {
-  const rows = row ? [row] : state.quoteOrders.filter(item => selectedOrderSet.value.has(orderNoOf(item)))
+  const rows = row ? [row] : state.products.filter(item => selectedOrderSet.value.has(orderNoOf(item)))
   if (!rows.length) {
-    toast('??????????')
+    toast('\u8bf7\u5148\u52fe\u9009\u8981\u62a5\u4ef7\u7684\u4ea7\u54c1')
     return
   }
   state.activeOrderNo = `${rows.length} ?`
@@ -137,22 +170,25 @@ function normalizeQuoteItem(item) {
   return {
     ...item,
     purchasePrice: valueOf(item, 'purchasePrice'),
-    purchase_price: valueOf(item, 'purchasePrice')
+    purchase_price: valueOf(item, 'purchasePrice'),
+    priceValidUntil: valueOf(item, 'priceValidUntil'),
+    price_valid_until: valueOf(item, 'priceValidUntil')
   }
 }
 
 async function openSelectedQuoteModal() {
   if (!state.selectedOrders.length) {
-    toast('??????????')
+    toast('\u8bf7\u5148\u52fe\u9009\u8981\u62a5\u4ef7\u7684\u4ea7\u54c1')
     return
   }
   await openQuoteModal()
 }
 
 async function saveQuoteItems() {
-  await request.put('/supplier/quotes/batch', state.quoteItems.map(item => ({
-    id: item.id,
-    purchasePrice: item.purchasePrice ?? item.purchase_price
+  await request.put('/supplier/products/quotes/batch', state.quoteItems.map(item => ({
+    code: valueOf(item, 'code'),
+    purchasePrice: item.purchasePrice ?? item.purchase_price,
+    priceValidUntil: item.priceValidUntil ?? item.price_valid_until
   })))
   state.modal = ''
   await load()
@@ -296,6 +332,36 @@ function resetColumns() {
   state.columnWidths[state.view] = {}
 }
 
+function tableStyleKey(scope = state.view) {
+  return `table-style:${user.role || 'SUPPLIER'}:${user.username || 'anonymous'}:${scope}`
+}
+
+function saveTableStyle() {
+  localStorage.setItem(tableStyleKey(), JSON.stringify({
+    columnOrder: state.columnOrder[state.view] || [...columns.value],
+    columnWidths: state.columnWidths[state.view] || {}
+  }))
+  toast('\u8868\u683c\u6837\u5f0f\u5df2\u4fdd\u5b58')
+}
+
+function loadTableStyles() {
+  views.forEach(([scope]) => {
+    const saved = localStorage.getItem(tableStyleKey(scope))
+    if (!saved) return
+    try {
+      const style = JSON.parse(saved)
+      if (Array.isArray(style.columnOrder)) {
+        state.columnOrder[scope] = style.columnOrder
+      }
+      if (style.columnWidths && typeof style.columnWidths === 'object') {
+        state.columnWidths[scope] = style.columnWidths
+      }
+    } catch (error) {
+      localStorage.removeItem(tableStyleKey(scope))
+    }
+  })
+}
+
 function clearFilters() {
   state.globalSearch = ''
   state.columnFilters = {}
@@ -334,9 +400,11 @@ function orderNoOf(row) {
 }
 
 function statusClass(row, key) {
-  if (key !== 'status') return ''
-  const value = String(valueOf(row, 'status') || '').toUpperCase()
+  if (!['status', 'link_status', 'quote_status'].includes(key)) return ''
+  const value = String(valueOf(row, key) || valueOf(row, 'status') || '').toUpperCase()
   if (value === 'WAIT_SUPPLIER_PRICE') return 'status-submitted'
+  if (value === 'NEED_QUOTE') return 'status-submitted'
+  if (value === 'QUOTED') return 'status-quote'
   if (value === 'SUPPLIER_PRICED' || value === 'APPROVED' || value === 'ACTIVE') return 'status-linked'
   if (value === 'PENDING' || value === 'WAIT_CODE' || value === 'CODE_NOT_FOUND') return 'status-wait'
   if (value === 'CANCELLED') return 'status-cancelled'
@@ -379,7 +447,8 @@ function camelToSnake(value) {
 }
 
 function logout() {
-  localStorage.clear()
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
   router.push('/')
 }
 
@@ -392,7 +461,10 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-onMounted(load)
+onMounted(async () => {
+  loadTableStyles()
+  await load()
+})
 </script>
 
 <template>
@@ -421,12 +493,24 @@ onMounted(load)
           <div class="panel-title-row">
             <h2>{{ views.find(view => view[0] === state.view)?.[1] }}</h2>
             <div class="panel-actions">
-              <button v-if="state.view === 'products'" @click="downloadTemplate">下载模板</button>
-              <button v-if="state.view === 'products'" @click="state.modal = 'upload'">导入 Excel</button>
-              <button v-if="state.view === 'products'" @click="state.modal = 'product'">提交产品</button>
-              <button v-if="state.view === 'quotes'" class="primary" @click="downloadSelectedOrders">下载报价表</button>
-              <button v-if="state.view === 'quotes'" class="primary" @click="state.modal = 'quoteImport'">导入表格填价</button>
-              <button v-if="state.view === 'quotes'" class="primary" @click="openSelectedQuoteModal">报价</button>
+              <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
+              <div v-if="state.view === 'products'" class="menu-wrap">
+                <button @click="toggleActionMenu('download')">{{ '\u4e0b\u8f7d\u8868\u683c' }}</button>
+                <div v-if="state.actionMenu === 'download'" class="action-menu">
+                  <button @click="downloadTemplate(); state.actionMenu = ''">{{ '\u53ea\u5bfc\u51fa\u6a21\u677f' }}</button>
+                  <button @click="exportSelectedRows(); state.actionMenu = ''">{{ '\u5bfc\u51fa\u9009\u4e2d\u6570\u636e' }}</button>
+                </div>
+              </div>
+              <div v-if="state.view === 'products'" class="menu-wrap">
+                <button @click="toggleActionMenu('import')">{{ '\u5bfc\u5165\u8868\u683c' }}</button>
+                <div v-if="state.actionMenu === 'import'" class="action-menu">
+                  <button @click="openImportMode('create')">{{ '\u5bfc\u5165\u65b0\u589e' }}</button>
+                  <button @click="openImportMode('update')">{{ '\u5bfc\u5165\u4fee\u6539' }}</button>
+                  <button @click="openImportMode('quote')">{{ '\u5bfc\u5165\u62a5\u4ef7' }}</button>
+                </div>
+              </div>
+              <button v-if="state.view === 'products'" @click="state.modal = 'product'">{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</button>
+              <button v-if="state.view === 'products'" class="primary" @click="openSelectedQuoteModal">{{ quoteModalTitle }}</button>
             </div>
           </div>
 
@@ -439,13 +523,13 @@ onMounted(load)
           <div class="table-wrap">
             <table>
               <colgroup>
-                <col v-if="state.view === 'quotes'" class="select-col">
+                <col v-if="state.view === 'products'" class="select-col">
                 <col v-for="key in columns" :key="key" :style="headerStyle(key)">
-                <col v-if="state.view === 'quotes'" class="action-col">
+                <col v-if="state.view === 'products'" class="action-col">
               </colgroup>
               <thead>
                 <tr>
-                  <th v-if="state.view === 'quotes'" class="check-cell">
+                  <th v-if="state.view === 'products'" class="check-cell">
                     <input type="checkbox" :checked="pageOrdersChecked" @change="togglePageOrders($event.target.checked)">
                   </th>
                   <th
@@ -493,18 +577,18 @@ onMounted(load)
                       </div>
                     </div>
                   </th>
-                  <th v-if="state.view === 'quotes'" class="action-cell">操作</th>
+                  <th v-if="state.view === 'products'" class="action-cell">操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in pagedRows" :key="`${state.view}-${row.id}`">
-                  <td v-if="state.view === 'quotes'" class="check-cell">
+                  <td v-if="state.view === 'products'" class="check-cell">
                     <input type="checkbox" :checked="selectedOrderSet.has(orderNoOf(row))" @change="toggleOrder(orderNoOf(row), $event.target.checked)">
                   </td>
                   <td v-for="key in columns" :key="key">
                     <span :class="statusClass(row, key)">{{ formatCell(valueOf(row, key)) }}</span>
                   </td>
-                  <td v-if="state.view === 'quotes'" class="row-actions action-cell">
+                  <td v-if="state.view === 'products'" class="row-actions action-cell">
                     <button class="primary" @click="openQuoteModal(row)">报价</button>
                   </td>
                 </tr>
@@ -514,7 +598,7 @@ onMounted(load)
 
           <div class="pager">
             <span>共 {{ filteredRows.length }} 条</span>
-            <span v-if="state.view === 'quotes'">已选 {{ state.selectedOrders.length }} 条</span>
+            <span v-if="state.view === 'products'">已选 {{ state.selectedOrders.length }} 条</span>
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
@@ -558,7 +642,7 @@ onMounted(load)
                 <td>{{ valueOf(item, 'specModel') }}</td>
                 <td>{{ valueOf(item, 'commonModel') }}</td>
                 <td><input v-model="item.purchasePrice"></td>
-                <td><span :class="statusClass(item, 'status')">{{ formatCell(valueOf(item, 'status')) }}</span></td>
+                <td><input v-model="item.priceValidUntil" type="date"></td>
               </tr>
             </tbody>
           </table>
@@ -571,10 +655,10 @@ onMounted(load)
 
     <div v-if="state.modal === 'product'" class="modal-mask" @click.self="state.modal = ''">
       <section class="modal">
-        <header class="modal-head"><h3>提交产品</h3><button @click="state.modal = ''">关闭</button></header>
+        <header class="modal-head"><h3>{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</h3><button @click="state.modal = ''">{{ closeText }}</button></header>
         <div class="modal-body product-form">
           <input v-for="field in supplierProductFields" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
-          <button class="primary" @click="submitProduct">提交审核</button>
+          <button class="primary" @click="submitProduct">{{ '\u4fdd\u5b58' }}</button>
         </div>
       </section>
     </div>
@@ -583,7 +667,6 @@ onMounted(load)
       <section class="modal">
         <header class="modal-head"><h3>导入产品</h3><button @click="state.modal = ''">关闭</button></header>
         <div class="modal-body form-grid">
-          <button @click="downloadTemplate">下载 Excel 模板</button>
           <input type="file" accept=".xlsx" @change="state.file = $event.target.files[0]">
           <button class="primary" @click="uploadFile">上传并提交审核</button>
         </div>

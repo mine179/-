@@ -10,27 +10,27 @@ const router = useRouter()
 const route = useRoute()
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
+const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
 const tabs = [
-  ['internal', '主表'],
-  ['supplier', '供应商产品表'],
-  ['orders', '客户订单表'],
-  ['customerProducts', '客户产品表'],
-  ['quotes', '供应商报价表'],
-  ['pricingAudit', '定价审核表'],
-  ['users', '账号管理']
+  ['internal', '\u4e3b\u8868'],
+  ['supplier', '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868'],
+  ['orders', '\u5ba2\u6237\u8ba2\u5355\u8868'],
+  ['customerProducts', '\u5ba2\u6237\u4ea7\u54c1\u8868'],
+  ['pricingAudit', '\u5b9a\u4ef7\u5ba1\u6838\u8868'],
+  ['users', '\u8d26\u53f7\u7ba1\u7406']
 ]
 
 const navTree = [
-  { tab: 'internal', children: ['quotes', 'pricingAudit'] },
-  { tab: 'supplier' },
+  { tab: 'internal' },
+  { tab: 'supplier', children: ['pricingAudit'] },
   { tab: 'orders' },
   { tab: 'customerProducts' },
   { tab: 'users' }
 ]
 
 const protectedCodeFields = ['code', 'newCode']
-const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice')
+const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && key !== 'priceValidUntil')
 const customerProductFields = productFields.filter(([key]) => key !== 'purchasePrice' && !protectedCodeFields.includes(key))
 const priceTrendOrderFields = [
   ['order_price_1', '最近订单价格1'],
@@ -82,7 +82,7 @@ const quoteProductColumnKeys = supplierProductColumnKeys.filter(key => key !== '
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
 const tableColumns = {
   internal: ['id', ...productColumnKeys, 'updated_at'],
-  supplier: ['id', 'status', ...supplierProductColumnKeys, 'supplier_username', 'updated_at'],
+  supplier: ['id', 'link_status', 'quote_status', ...supplierProductColumnKeys, 'supplier_username', 'pending_quote_count', 'updated_at'],
   orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
   customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
   quotes: ['id', 'status', ...quoteProductColumnKeys, 'supplier_username', 'updated_at'],
@@ -120,6 +120,8 @@ const state = reactive({
   filterMenu: '',
   filterSearch: '',
   filterMenuStyle: {},
+  actionMenu: '',
+  importMode: '',
   columnOrder: {},
   columnWidths: {},
   dragColumn: '',
@@ -182,17 +184,15 @@ async function load() {
 }
 
 async function refreshLinkCounts() {
-  const [supplierRows, orderRows, unmatchedRows, quoteRows, pricingRows] = await Promise.all([
+  const [supplierRows, orderRows, unmatchedRows, pricingRows] = await Promise.all([
     request.get('/admin/table/supplier'),
     request.get('/admin/table/orders'),
     request.get('/admin/table/customerProducts'),
-    request.get('/admin/table/quotes'),
     request.get('/admin/table/pricingAudit')
   ])
-  state.linkCounts.supplier = supplierRows.filter(rowStillUnlinked).length
+  state.linkCounts.supplier = supplierRows.filter(rowNeedsSupplierPrice).length
   state.linkCounts.orders = orderRows.filter(rowNeedsQuote).length
   state.linkCounts.customerProducts = unmatchedRows.filter(rowStillUnlinked).length
-  state.linkCounts.quotes = quoteRows.filter(rowNeedsSupplierPrice).length
   state.linkCounts.pricingAudit = pricingRows.filter(rowNeedsPricing).length
 }
 
@@ -263,6 +263,15 @@ async function addMaster() {
   closeModal()
   await load()
   toast('已添加到主表')
+}
+
+async function addSupplierProduct() {
+  await request.post('/admin/supplier-products', state.product)
+  state.product = {}
+  closeModal()
+  await load()
+  await refreshLinkCounts()
+  toast('\u4f9b\u5e94\u5546\u4ea7\u54c1\u5df2\u65b0\u589e')
 }
 
 function openApprove(row) {
@@ -393,6 +402,11 @@ function selectedQuoteRows() {
   return activeRows.value.filter(row => selected.has(rowKey(row)))
 }
 
+function selectedCurrentRows() {
+  const selected = new Set(state.selectedRows.map(row => `${row.table}:${row.id}`))
+  return activeRows.value.filter(row => selected.has(rowKey(row)))
+}
+
 async function downloadAdminQuoteOrders() {
   const rows = selectedQuoteRows()
   if (!rows.length) {
@@ -406,7 +420,7 @@ async function downloadAdminQuoteOrders() {
 function openAdminQuoteModal(row) {
   const targetRows = row ? [row] : selectedQuoteRows()
   if (!targetRows.length) {
-    toast('??????????')
+    toast('\u8bf7\u5148\u52fe\u9009\u8981\u62a5\u4ef7\u7684\u4ea7\u54c1')
     return
   }
   state.activeQuoteTitle = `${targetRows.length} ?`
@@ -418,16 +432,28 @@ function normalizeQuoteItem(item) {
   return {
     ...item,
     purchase_price: valueOf(item, 'purchase_price'),
-    purchasePrice: valueOf(item, 'purchase_price')
+    purchasePrice: valueOf(item, 'purchase_price'),
+    price_valid_until: valueOf(item, 'price_valid_until'),
+    priceValidUntil: valueOf(item, 'price_valid_until')
   }
 }
 
 async function saveAdminQuoteItems() {
-  await request.put('/admin/quotes/batch', state.quoteItems.map(item => ({
-    id: item.id,
-    purchasePrice: item.purchase_price ?? item.purchasePrice,
-    salePrice: item.sale_price ?? item.salePrice
-  })))
+  if (state.tab === 'supplier') {
+    await request.put('/admin/supplier-products/quotes/batch', state.quoteItems.map(item => ({
+      supplierUsername: valueOf(item, 'supplier_username') || valueOf(item, 'supplierUsername'),
+      code: valueOf(item, 'code'),
+      purchasePrice: item.purchase_price ?? item.purchasePrice,
+      priceValidUntil: item.price_valid_until ?? item.priceValidUntil
+    })))
+  } else {
+    await request.put('/admin/quotes/batch', state.quoteItems.map(item => ({
+      id: item.id,
+      purchasePrice: item.purchase_price ?? item.purchasePrice,
+      salePrice: item.sale_price ?? item.salePrice,
+      priceValidUntil: item.price_valid_until ?? item.priceValidUntil
+    })))
+  }
   closeModal()
   await load()
   await refreshLinkCounts()
@@ -800,6 +826,36 @@ function resetColumns() {
   state.columnWidths[state.tab] = {}
 }
 
+function tableStyleKey(scope = state.tab) {
+  return `table-style:${user.role || 'ADMIN'}:${user.username || 'anonymous'}:${scope}`
+}
+
+function saveTableStyle() {
+  localStorage.setItem(tableStyleKey(), JSON.stringify({
+    columnOrder: state.columnOrder[state.tab] || [...columns.value],
+    columnWidths: state.columnWidths[state.tab] || {}
+  }))
+  toast('\u8868\u683c\u6837\u5f0f\u5df2\u4fdd\u5b58')
+}
+
+function loadTableStyles() {
+  tabs.forEach(([scope]) => {
+    const saved = localStorage.getItem(tableStyleKey(scope))
+    if (!saved) return
+    try {
+      const style = JSON.parse(saved)
+      if (Array.isArray(style.columnOrder)) {
+        state.columnOrder[scope] = style.columnOrder
+      }
+      if (style.columnWidths && typeof style.columnWidths === 'object') {
+        state.columnWidths[scope] = style.columnWidths
+      }
+    } catch (error) {
+      localStorage.removeItem(tableStyleKey(scope))
+    }
+  })
+}
+
 function clearFilters() {
   state.globalSearch = ''
   state.columnFilters = {}
@@ -810,6 +866,33 @@ function clearFilters() {
 async function downloadTableTemplate() {
   const response = await request.get(`/admin/table/${apiTableName()}/template`, { responseType: 'blob' })
   downloadBlob(response.data, `${tabs.find(tab => tab[0] === state.tab)?.[1] || state.tab}模板.xlsx`)
+}
+
+function exportSelectedRows() {
+  const rows = selectedCurrentRows()
+  if (!rows.length) {
+    toast('\u8bf7\u5148\u52fe\u9009\u8981\u5bfc\u51fa\u7684\u6570\u636e')
+    return
+  }
+  exportRowsAsExcel(rows, columns.value, `${tabLabel(state.tab)}-\u9009\u4e2d\u6570\u636e.xls`)
+}
+
+function exportRowsAsExcel(rows, keys, filename) {
+  const escape = value => String(formatCell(value ?? '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const header = keys.map(key => `<th>${escape(columnLabel(key))}</th>`).join('')
+  const body = rows.map(row => `<tr>${keys.map(key => `<td>${escape(valueOf(row, key))}</td>`).join('')}</tr>`).join('')
+  const html = `<html><head><meta charset="UTF-8"></head><body><table><tr>${header}</tr>${body}</table></body></html>`
+  downloadBlob(new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' }), filename)
+}
+
+function toggleActionMenu(menu) {
+  state.actionMenu = state.actionMenu === menu ? '' : menu
+}
+
+function openImportMode(mode) {
+  state.importMode = mode
+  state.actionMenu = ''
+  openModal(mode === 'quote' ? 'quoteImport' : 'import')
 }
 
 async function importTable() {
@@ -877,7 +960,8 @@ function rowNeedsQuote(row) {
 }
 
 function rowNeedsSupplierPrice(row) {
-  return String(valueOf(row, 'status') || '').toUpperCase() === 'WAIT_SUPPLIER_PRICE'
+  const quoteStatus = String(valueOf(row, 'quote_status') || valueOf(row, 'quoteStatus') || '').toUpperCase()
+  return quoteStatus === 'NEED_QUOTE' || String(valueOf(row, 'status') || '').toUpperCase() === 'WAIT_SUPPLIER_PRICE'
 }
 
 function rowNeedsPricing(row) {
@@ -905,10 +989,12 @@ function toggleNavGroup(tab) {
 }
 
 function statusClass(row, key) {
-  if (key !== 'status' && key !== 'pricing_status') return ''
+  if (!['status', 'link_status', 'quote_status', 'pricing_status'].includes(key)) return ''
   const status = key === 'pricing_status'
     ? String(valueOf(row, key) || '').toUpperCase()
-    : orderStatusOf(row)
+    : key === 'quote_status' || key === 'link_status'
+      ? String(valueOf(row, key) || '').toUpperCase()
+      : orderStatusOf(row)
   if (status === 'CANCELLED') return 'status-cancelled'
   if (status === 'QUOTE_COMPLETED' || status === 'COMPLETED') return 'status-completed'
   if (status === 'WAIT_USE_PRICE') return 'status-submitted'
@@ -917,6 +1003,8 @@ function statusClass(row, key) {
   if (status === 'SUBMITTED' || status === 'SUBMITTED_ORDER') return 'status-submitted'
   if (status === 'QUOTE_GENERATED') return 'status-linked'
   if (status === 'WAIT_SUPPLIER_PRICE') return 'status-submitted'
+  if (status === 'NEED_QUOTE') return 'status-submitted'
+  if (status === 'QUOTED') return 'status-quote'
   if (status === 'SUPPLIER_PRICED') return 'status-quote'
   if (status === 'PENDING' || status === 'WAIT_CODE' || status === 'CODE_NOT_FOUND') return 'status-wait'
   if (status === 'APPROVED' || status === 'ACTIVE') return 'status-linked'
@@ -954,11 +1042,13 @@ function snakeToCamel(value) {
 }
 
 function logout() {
-  localStorage.clear()
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
   router.push('/')
 }
 
 onMounted(async () => {
+  loadTableStyles()
   await load()
   await refreshLinkCounts()
 })
@@ -1013,10 +1103,28 @@ onMounted(async () => {
               <button v-if="state.tab === 'quotes'" class="primary" @click="downloadAdminQuoteOrders">下载报价表</button>
               <button v-if="state.tab === 'quotes'" class="primary" @click="openModal('quoteImport')">导入表格填价</button>
               <button v-if="state.tab === 'quotes'" class="primary" @click="openAdminQuoteModal()">报价</button>
+              <button v-if="state.tab === 'supplier'" @click="openModal('supplierProduct')">{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</button>
+              <button v-if="state.tab === 'supplier'" class="primary" @click="openAdminQuoteModal()">{{ '\u62a5\u4ef7' }}</button>
               <button v-if="canBatchDelete()" class="danger" @click="deleteSelectedRows">{{ state.tab === 'orders' ? '批量作废' : '批量删除' }}</button>
               <button v-if="state.tab === 'internal'" class="primary" @click="openPriceTrendModal">查看价格趋势</button>
-              <button v-if="canUseTableImport()" @click="downloadTableTemplate">{{ downloadButtonText() }}</button>
-              <button v-if="canUseTableImport()" @click="openModal('import')">{{ importButtonText() }}</button>
+              <div v-if="state.tab === 'supplier'" class="menu-wrap">
+                <button @click="toggleActionMenu('download')">{{ '\u4e0b\u8f7d\u8868\u683c' }}</button>
+                <div v-if="state.actionMenu === 'download'" class="action-menu">
+                  <button @click="downloadTableTemplate(); state.actionMenu = ''">{{ '\u53ea\u5bfc\u51fa\u6a21\u677f' }}</button>
+                  <button @click="exportSelectedRows(); state.actionMenu = ''">{{ '\u5bfc\u51fa\u9009\u4e2d\u6570\u636e' }}</button>
+                </div>
+              </div>
+              <div v-if="state.tab === 'supplier'" class="menu-wrap">
+                <button @click="toggleActionMenu('import')">{{ '\u5bfc\u5165\u8868\u683c' }}</button>
+                <div v-if="state.actionMenu === 'import'" class="action-menu">
+                  <button @click="openImportMode('create')">{{ '\u5bfc\u5165\u65b0\u589e' }}</button>
+                  <button @click="openImportMode('update')">{{ '\u5bfc\u5165\u4fee\u6539' }}</button>
+                  <button @click="openImportMode('quote')">{{ '\u5bfc\u5165\u62a5\u4ef7' }}</button>
+                </div>
+              </div>
+              <button v-if="canUseTableImport() && state.tab !== 'supplier'" @click="downloadTableTemplate">{{ downloadButtonText() }}</button>
+              <button v-if="canUseTableImport() && state.tab !== 'supplier'" @click="openModal('import')">{{ importButtonText() }}</button>
+              <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
             </div>
           </div>
 
@@ -1099,6 +1207,7 @@ onMounted(async () => {
                     <button v-else-if="state.tab !== 'orders' && state.tab !== 'quotes' && state.tab !== 'pricingAudit'" @click="openEdit(row)">修改</button>
                     <button v-if="state.tab === 'orders'" class="primary" @click="openOrderItemPrice(row)">添加价格</button>
                     <button v-if="state.tab === 'quotes'" class="primary" @click="openAdminQuoteModal(row)">报价</button>
+                    <button v-if="state.tab === 'supplier'" class="primary" @click="openAdminQuoteModal(row)">{{ '\u62a5\u4ef7' }}</button>
                     <button v-if="state.tab === 'pricingAudit'" class="primary" @click="openUseSupplierQuote(row)">采用价格</button>
                     <button v-if="canLink(row)" @click="openApprove(row)">链接物料编码</button>
                     <button v-if="state.tab === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrderItem(row)">产品作废</button>
@@ -1137,6 +1246,7 @@ onMounted(async () => {
           <h3 v-if="state.modal === 'account'">新增账号</h3>
           <h3 v-if="state.modal === 'accountEdit'">修改账号</h3>
           <h3 v-if="state.modal === 'master'">新增主表记录</h3>
+          <h3 v-if="state.modal === 'supplierProduct'">{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</h3>
           <h3 v-if="state.modal === 'approve'">链接物料编码</h3>
           <h3 v-if="state.modal === 'edit'">修改记录</h3>
           <h3 v-if="state.modal === 'quotePrice'">报价</h3>
@@ -1180,6 +1290,11 @@ onMounted(async () => {
           <button class="primary" @click="addMaster">保存</button>
         </div>
 
+        <div v-if="state.modal === 'supplierProduct'" class="modal-body product-form">
+          <input v-for="field in [...supplierProductFields, ['supplierUsername', '\u4f9b\u5e94\u5546\u8d26\u53f7']]" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
+          <button class="primary" @click="addSupplierProduct">{{ '\u4fdd\u5b58' }}</button>
+        </div>
+
         <div v-if="state.modal === 'approve'" class="modal-body form-grid">
           <input v-model="state.approve.code" placeholder="物料编码">
           <input v-model="state.approve.newCode" placeholder="新编码">
@@ -1194,6 +1309,17 @@ onMounted(async () => {
         <div v-if="state.modal === 'quotePrice'" class="modal-body quote-modal">
           <div class="table-wrap compact">
             <table>
+              <colgroup>
+                <col style="width: 150px">
+                <col style="width: 120px">
+                <col style="width: 120px">
+                <col style="width: 120px">
+                <col style="width: 130px">
+                <col style="width: 140px">
+                <col style="width: 140px">
+                <col style="width: 92px">
+                <col style="width: 190px">
+              </colgroup>
               <thead>
                 <tr>
                   <th>{{ columnLabel('supplier_username') }}</th>
@@ -1204,7 +1330,7 @@ onMounted(async () => {
                   <th>{{ columnLabel('spec_model') }}</th>
                   <th>{{ columnLabel('common_model') }}</th>
                   <th>{{ columnLabel('purchase_price') }}</th>
-                  <th>{{ columnLabel('status') }}</th>
+                  <th>{{ columnLabel('price_valid_until') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1217,7 +1343,7 @@ onMounted(async () => {
                   <td>{{ item.spec_model || item.specModel }}</td>
                   <td>{{ item.common_model || item.commonModel }}</td>
                   <td><input v-model="item.purchase_price" :placeholder="columnLabel('purchase_price')"></td>
-                  <td><span :class="statusClass(item, 'status')">{{ formatCell(item.status) }}</span></td>
+                  <td><input v-model="item.price_valid_until" type="date" :placeholder="columnLabel('price_valid_until')"></td>
                 </tr>
               </tbody>
             </table>

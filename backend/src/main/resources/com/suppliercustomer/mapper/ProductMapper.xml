@@ -190,6 +190,57 @@
         select * from customer_order_items where order_no=#{orderNo} order by id
     </select>
 
+    <select id="listAdminSupplierProductRows" resultType="java.util.LinkedHashMap">
+        select s.*,
+               s.status link_status,
+               case when exists (
+                    select 1 from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
+               (
+                    select count(*) from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+               ) pending_quote_count
+        from supplier_submissions s
+        order by case when exists (
+                    select 1 from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+                 ) then 0 else 1 end,
+                 s.id desc
+    </select>
+
+    <select id="listSupplierProductRows" resultType="java.util.LinkedHashMap">
+        select s.*,
+               s.status link_status,
+               case when exists (
+                    select 1 from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
+               (
+                    select count(*) from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+               ) pending_quote_count
+        from supplier_submissions s
+        where s.supplier_username=#{supplierUsername}
+        order by case when exists (
+                    select 1 from supplier_quotes q
+                    where q.supplier_username=s.supplier_username
+                      and q.code=s.code
+                      and q.status='WAIT_SUPPLIER_PRICE'
+                 ) then 0 else 1 end,
+                 s.id desc
+    </select>
+
     <select id="listSupplierSubmissions" resultType="com.suppliercustomer.pojo.Product">
         select * from supplier_submissions where supplier_username=#{supplierUsername} order by id desc
     </select>
@@ -530,9 +581,13 @@
 
     <update id="supplierUpdateQuoteByOrderAndCode" parameterType="com.suppliercustomer.pojo.SupplierQuote">
         update supplier_quotes
-        set purchase_price=#{purchasePrice},status='SUPPLIER_PRICED',updated_at=current_timestamp
+        set purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
+            status='SUPPLIER_PRICED',
+            updated_at=current_timestamp
         where supplier_username=#{supplierUsername}
           and code=#{code}
+          and status='WAIT_SUPPLIER_PRICE'
     </update>
 
     <update id="adminUpdateQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
@@ -550,7 +605,7 @@
     <update id="updateSupplierSubmissionPrice">
         update supplier_submissions
         set purchase_price=#{purchasePrice},
-            price_valid_until=null,
+            price_valid_until=#{priceValidUntil},
             updated_at=current_timestamp
         where supplier_username=#{supplierUsername}
           and code=#{code}

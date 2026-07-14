@@ -230,6 +230,22 @@ public class ApiController {
         return Result.success();
     }
 
+    @PutMapping("/admin/supplier-products/quotes/batch")
+    public Result adminSupplierProductQuoteBatch(@RequestHeader("Authorization") String authorization,
+                                                 @RequestBody List<SupplierQuote> quotes) {
+        userService.requireRole(authorization, "ADMIN");
+        productService.adminSupplierProductQuoteBatch(quotes);
+        return Result.success();
+    }
+
+    @PostMapping("/admin/supplier-products")
+    public Result adminAddSupplierProduct(@RequestHeader("Authorization") String authorization,
+                                          @RequestBody Product product) {
+        userService.requireRole(authorization, "ADMIN");
+        productService.adminAddSupplierSubmission(product);
+        return Result.success();
+    }
+
     @PostMapping("/admin/quotes/{id}/use")
     public Result useSupplierQuote(@RequestHeader("Authorization") String authorization,
                                    @PathVariable Long id) {
@@ -327,6 +343,14 @@ public class ApiController {
                                            @RequestBody List<SupplierQuote> quotes) {
         LoginUser user = userService.requireRole(authorization, "SUPPLIER");
         productService.supplierUpdateQuoteBatch(user.getUsername(), quotes);
+        return Result.success();
+    }
+
+    @PutMapping("/supplier/products/quotes/batch")
+    public Result supplierProductQuoteBatch(@RequestHeader("Authorization") String authorization,
+                                            @RequestBody List<SupplierQuote> quotes) {
+        LoginUser user = userService.requireRole(authorization, "SUPPLIER");
+        productService.supplierProductQuoteBatch(user.getUsername(), quotes);
         return Result.success();
     }
 

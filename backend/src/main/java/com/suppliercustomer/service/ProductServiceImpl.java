@@ -60,18 +60,20 @@ public class ProductServiceImpl implements ProductService {
             new FieldDef("供应价", "purchase_price", "decimal"),
             new FieldDef("\u4ef7\u683c\u6709\u6548\u671f\u9650", "price_valid_until", "date")
     );
-    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "sale_price");
+    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "sale_price", "price_valid_until");
     private static final List<FieldDef> CUSTOMER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "code", "new_code", "purchase_price");
     private static final List<FieldDef> SUPPLIER_QUOTE_PRICE_FIELDS = Arrays.asList(
-            new FieldDef("物料编码", "code"),
-            new FieldDef("规格型号", "spec_model"),
-            new FieldDef("供应价", "purchase_price", "decimal")
+            new FieldDef("????", "code"),
+            new FieldDef("????", "spec_model"),
+            new FieldDef("???", "purchase_price", "decimal"),
+            new FieldDef("\u4ef7\u683c\u6709\u6548\u671f\u9650", "price_valid_until", "date")
     );
     private static final List<FieldDef> ADMIN_QUOTE_PRICE_FIELDS = Arrays.asList(
-            new FieldDef("供应商账号", "supplier_username"),
-            new FieldDef("物料编码", "code"),
-            new FieldDef("规格型号", "spec_model"),
-            new FieldDef("供应价", "purchase_price", "decimal")
+            new FieldDef("?????", "supplier_username"),
+            new FieldDef("????", "code"),
+            new FieldDef("????", "spec_model"),
+            new FieldDef("???", "purchase_price", "decimal"),
+            new FieldDef("\u4ef7\u683c\u6709\u6548\u671f\u9650", "price_valid_until", "date")
     );
     private static final Map<String, List<FieldDef>> TEMPLATE_FIELDS = createTemplateFields();
 
@@ -85,6 +87,9 @@ public class ProductServiceImpl implements ProductService {
         }
         if ("orders".equals(name)) {
             return productMapper.listAdminOrderRows();
+        }
+        if ("supplier".equals(name)) {
+            return productMapper.listAdminSupplierProductRows();
         }
         if ("quotes".equals(name)) {
             return productMapper.listAdminSupplierQuoteRows();
@@ -424,6 +429,7 @@ public class ProductServiceImpl implements ProductService {
             } else {
                 row.createCell(3).setCellValue(stringValue(price));
             }
+            row.createCell(4).setCellValue(stringValue(item.get("price_valid_until")));
         }
 
         workbook.write(outputStream);
@@ -449,6 +455,7 @@ public class ProductServiceImpl implements ProductService {
             String supplierUsername = cell(row.getCell(0));
             String code = cell(row.getCell(1));
             String price = cell(row.getCell(3));
+            String priceValidUntil = cell(row.getCell(4));
             total++;
             if (empty(supplierUsername) || empty(code) || empty(price)) {
                 continue;
@@ -458,6 +465,7 @@ public class ProductServiceImpl implements ProductService {
                 quote.setSupplierUsername(supplierUsername);
                 quote.setCode(code);
                 quote.setPurchasePrice(decimal(price));
+                quote.setPriceValidUntil(dateValue(priceValidUntil));
                 int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
                 updated += changed;
                 if (changed > 0) {
@@ -476,14 +484,26 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public List<Product> listSupplierSubmissions(String supplierUsername) {
-        return productMapper.listSupplierSubmissions(supplierUsername);
+    public List<Map<String, Object>> listSupplierSubmissions(String supplierUsername) {
+        return productMapper.listSupplierProductRows(supplierUsername);
     }
 
     @Override
     public void addSupplierSubmission(String supplierUsername, Product product) {
         clearProtectedCodes(product);
         product.setSupplierUsername(supplierUsername);
+        product.setPriceValidUntil(null);
+        applySupplierCodeStatus(product);
+        productMapper.insertSupplierSubmission(product);
+        syncSupplierManualPriceToInternal(product);
+    }
+
+    @Override
+    public void adminAddSupplierSubmission(Product product) {
+        if (empty(product.getSupplierUsername())) {
+            throw new CustomException("SUPPLIER_REQUIRED");
+        }
+        product.setPriceValidUntil(null);
         applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
         syncSupplierManualPriceToInternal(product);
@@ -540,6 +560,39 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    public void supplierProductQuoteBatch(String supplierUsername, List<SupplierQuote> quotes) {
+        if (quotes == null) {
+            return;
+        }
+        for (SupplierQuote quote : quotes) {
+            if (quote == null || empty(quote.getCode()) || quote.getPurchasePrice() == null) {
+                continue;
+            }
+            quote.setSupplierUsername(supplierUsername);
+            int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+            if (changed > 0) {
+                syncSupplierProductPrice(quote);
+            }
+        }
+    }
+
+    @Override
+    public void adminSupplierProductQuoteBatch(List<SupplierQuote> quotes) {
+        if (quotes == null) {
+            return;
+        }
+        for (SupplierQuote quote : quotes) {
+            if (quote == null || empty(quote.getSupplierUsername()) || empty(quote.getCode()) || quote.getPurchasePrice() == null) {
+                continue;
+            }
+            int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+            if (changed > 0) {
+                syncSupplierProductPrice(quote);
+            }
+        }
+    }
+
+    @Override
     public ResponseEntity<byte[]> supplierQuoteDownload(String supplierUsername, List<String> orderNos) throws IOException {
         Workbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -562,6 +615,7 @@ public class ProductServiceImpl implements ProductService {
                 } else {
                     row.createCell(2).setCellValue("");
                 }
+                row.createCell(3).setCellValue(item.getPriceValidUntil() == null ? "" : item.getPriceValidUntil().toString());
             }
         }
         workbook.write(outputStream);
@@ -586,6 +640,7 @@ public class ProductServiceImpl implements ProductService {
             }
             String code = cell(row.getCell(0));
             String price = cell(row.getCell(2));
+            String priceValidUntil = cell(row.getCell(3));
             total++;
             if (empty(code) || empty(price)) {
                 continue;
@@ -595,6 +650,7 @@ public class ProductServiceImpl implements ProductService {
                 quote.setSupplierUsername(supplierUsername);
                 quote.setCode(code);
                 quote.setPurchasePrice(decimal(price));
+                quote.setPriceValidUntil(dateValue(priceValidUntil));
                 int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
                 updated += changed;
                 if (changed > 0) {
@@ -1239,6 +1295,7 @@ public class ProductServiceImpl implements ProductService {
 
     private Map<String, Object> supplierProductData(Product product) {
         Map<String, Object> data = productBaseData(product);
+        data.remove("price_valid_until");
         data.put("supplier_username", product.getSupplierUsername());
         data.put("status", product.getStatus());
         data.put("master_product_id", product.getMasterProductId());
@@ -1295,7 +1352,11 @@ public class ProductServiceImpl implements ProductService {
         }
         Product existing = productMapper.findSupplierSubmissionBySupplierAndCode(quote.getSupplierUsername(), quote.getCode());
         if (existing != null) {
-            productMapper.updateSupplierSubmissionPrice(quote.getSupplierUsername(), quote.getCode(), purchasePrice);
+            productMapper.updateSupplierSubmissionPrice(quote.getSupplierUsername(), quote.getCode(), purchasePrice, quote.getPriceValidUntil());
+            Product pricedProduct = copyProduct(existing);
+            pricedProduct.setPurchasePrice(purchasePrice);
+            pricedProduct.setPriceValidUntil(quote.getPriceValidUntil());
+            syncSupplierManualPriceToInternal(pricedProduct);
             return;
         }
         Product internal = productMapper.findInternalProductByCode(quote.getCode());
@@ -1306,10 +1367,11 @@ public class ProductServiceImpl implements ProductService {
         supplierProduct.setSupplierUsername(quote.getSupplierUsername());
         supplierProduct.setPurchasePrice(purchasePrice);
         supplierProduct.setSalePrice(null);
-        supplierProduct.setPriceValidUntil(null);
+        supplierProduct.setPriceValidUntil(quote.getPriceValidUntil());
         supplierProduct.setMasterProductId(internal.getId());
         supplierProduct.setStatus("APPROVED");
         productMapper.insertSupplierSubmission(supplierProduct);
+        syncSupplierManualPriceToInternal(supplierProduct);
     }
 
     private void syncSupplierProductPrice(SupplierQuote quote) {

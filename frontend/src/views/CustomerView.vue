@@ -9,6 +9,7 @@ import { columnStyle, defaultColumnWidths, startColumnResize } from '../utils/co
 const router = useRouter()
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
+const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
 const hiddenColumns = ['serial_no', 'serialNo', 'code', 'newCode', 'new_code', 'purchase_price', 'purchasePrice', 'customer_username', 'customerUsername']
 const internalHiddenColumns = [
@@ -363,6 +364,36 @@ function resetColumns() {
   state.columnWidths[state.view] = {}
 }
 
+function tableStyleKey(scope = state.view) {
+  return `table-style:${user.role || 'CUSTOMER'}:${user.username || 'anonymous'}:${scope}`
+}
+
+function saveTableStyle() {
+  localStorage.setItem(tableStyleKey(), JSON.stringify({
+    columnOrder: state.columnOrder[state.view] || [...columns.value],
+    columnWidths: state.columnWidths[state.view] || {}
+  }))
+  toast('\u8868\u683c\u6837\u5f0f\u5df2\u4fdd\u5b58')
+}
+
+function loadTableStyles() {
+  views.forEach(([scope]) => {
+    const saved = localStorage.getItem(tableStyleKey(scope))
+    if (!saved) return
+    try {
+      const style = JSON.parse(saved)
+      if (Array.isArray(style.columnOrder)) {
+        state.columnOrder[scope] = style.columnOrder
+      }
+      if (style.columnWidths && typeof style.columnWidths === 'object') {
+        state.columnWidths[scope] = style.columnWidths
+      }
+    } catch (error) {
+      localStorage.removeItem(tableStyleKey(scope))
+    }
+  })
+}
+
 function clearFilters() {
   state.globalSearch = ''
   state.columnFilters = {}
@@ -400,11 +431,13 @@ function snakeToCamel(value) {
 }
 
 function logout() {
-  localStorage.clear()
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
   router.push('/')
 }
 
 onMounted(async () => {
+  loadTableStyles()
   await loadCurrent()
 })
 </script>
@@ -435,6 +468,7 @@ onMounted(async () => {
           <div class="panel-title-row">
             <h2>{{ views.find(view => view[0] === state.view)?.[1] }}</h2>
             <div class="panel-actions">
+              <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'product'">新增订单</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'upload'">上传订单</button>
               <button v-if="state.view === 'internal'" class="primary" @click="orderFromInternal">勾选下单</button>

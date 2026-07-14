@@ -157,6 +157,49 @@ select {
   gap: 8px;
 }
 
+.panel-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-wrap > button::after {
+  content: "\25BE";
+  margin-left: 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 150px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  display: grid;
+  gap: 4px;
+}
+
+.action-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  background: transparent;
+  border-color: transparent;
+}
+
+.action-menu button:hover {
+  background: #eef6ff;
+}
+
 button.danger {
   border-color: #d7564a;
   color: #b72d22;
@@ -396,6 +439,15 @@ button.danger {
   max-height: 560px;
 }
 
+.quote-modal td input {
+  width: 100%;
+  min-width: 0;
+}
+
+.quote-modal td input[type="date"] {
+  min-width: 170px;
+}
+
 .order-detail-table {
   max-height: calc(100vh - 170px);
 }
@@ -625,21 +677,21 @@ td input {
 }
 
 .action-col {
-  width: 220px;
-  min-width: 220px;
-  max-width: 220px;
-}
-
-.action-col-wide {
   width: 300px;
   min-width: 300px;
   max-width: 300px;
 }
 
+.action-col-wide {
+  width: 380px;
+  min-width: 380px;
+  max-width: 380px;
+}
+
 .action-cell {
-  width: 220px;
-  min-width: 220px;
-  max-width: 300px;
+  width: 300px;
+  min-width: 300px;
+  max-width: 380px;
   overflow: visible;
 }
 

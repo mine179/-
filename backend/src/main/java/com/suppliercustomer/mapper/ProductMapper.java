@@ -80,6 +80,10 @@ public interface ProductMapper {
 
     List<Product> listAdminOrderItems(String orderNo);
 
+    List<Map<String, Object>> listAdminSupplierProductRows();
+
+    List<Map<String, Object>> listSupplierProductRows(String supplierUsername);
+
     List<Product> listSupplierSubmissions(String supplierUsername);
 
     List<SupplierQuote> listSupplierQuotes(String supplierUsername);
@@ -157,7 +161,8 @@ public interface ProductMapper {
 
     void updateSupplierSubmissionPrice(@Param("supplierUsername") String supplierUsername,
                                        @Param("code") String code,
-                                       @Param("purchasePrice") java.math.BigDecimal purchasePrice);
+                                       @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                       @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
 
     SupplierQuote findSupplierQuote(Long id);
 

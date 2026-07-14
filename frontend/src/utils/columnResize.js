@@ -14,6 +14,8 @@ export function defaultColumnWidths(keys) {
 function defaultWidth(key) {
   if (key === 'id') return 72
   if (key === 'status' || key === 'enabled' || key === 'role') return 130
+  if (key.includes('validUntil') || key.includes('valid_until')) return 190
+  if (key === 'purchasePrice' || key === 'purchase_price') return 105
   if (key.includes('price')) return 130
   if (key.includes('username')) return 180
   if (key.includes('order')) return 180

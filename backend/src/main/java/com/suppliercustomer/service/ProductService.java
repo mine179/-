@@ -48,9 +48,11 @@ public interface ProductService {
 
     Map<String, Object> importAdminQuotePrices(MultipartFile file) throws IOException;
 
-    List<Product> listSupplierSubmissions(String supplierUsername);
+    List<Map<String, Object>> listSupplierSubmissions(String supplierUsername);
 
     void addSupplierSubmission(String supplierUsername, Product product);
+
+    void adminAddSupplierSubmission(Product product);
 
     List<SupplierQuote> listSupplierQuotes(String supplierUsername);
 
@@ -65,6 +67,10 @@ public interface ProductService {
     void supplierUpdateQuote(String supplierUsername, Long id, SupplierQuote quote);
 
     void supplierUpdateQuoteBatch(String supplierUsername, List<SupplierQuote> quotes);
+
+    void supplierProductQuoteBatch(String supplierUsername, List<SupplierQuote> quotes);
+
+    void adminSupplierProductQuoteBatch(List<SupplierQuote> quotes);
 
     ResponseEntity<byte[]> supplierQuoteDownload(String supplierUsername, List<String> orderNos) throws IOException;
 
