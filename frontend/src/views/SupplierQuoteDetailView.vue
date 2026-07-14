@@ -16,9 +16,10 @@ const state = reactive({
   editItem: {},
   modal: '',
   page: 1,
-  pageSize: 15,
+  pageSize: 1000,
   columnWidths: {}
 })
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 const quoteDetailColumns = [
   'id', 'brand', 'code', 'new_code',
   'color', 'category', 'craft_material', 'spec_model', 'common_model',
@@ -145,10 +146,7 @@ onMounted(load)
         <label>
           每页
           <select v-model.number="state.pageSize" @change="changePageSize">
-            <option :value="15">15</option>
-            <option :value="30">30</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
           </select>
           条
         </label>

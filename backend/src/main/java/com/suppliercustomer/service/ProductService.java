@@ -44,6 +44,10 @@ public interface ProductService {
 
     void useSupplierQuote(Long id);
 
+    String sendPricingAuditQuoteTasks(List<String> codes);
+
+    void usePricingAuditPrice(Map<String, Object> price);
+
     ResponseEntity<byte[]> adminQuoteDownload(List<Long> quoteIds) throws IOException;
 
     Map<String, Object> importAdminQuotePrices(MultipartFile file) throws IOException;

@@ -14,7 +14,7 @@
     </sql>
 
     <select id="listTable" resultType="java.util.LinkedHashMap">
-        select * from ${tableName} order by id desc
+        select * from ${tableName} order by id asc
     </select>
 
     <update id="updateTableRow">
@@ -86,8 +86,8 @@
     </insert>
 
     <insert id="insertSupplierQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
-        insert into supplier_quotes(order_no,customer_item_id,master_product_id,supplier_username,customer_username,code,pricing_group,spec_model,purchase_price,sale_price,price_valid_until,status,pricing_status)
-        values(#{orderNo},#{customerItemId},#{masterProductId},#{supplierUsername},#{customerUsername},#{code},#{pricingGroup},#{specModel},#{purchasePrice},#{salePrice},#{priceValidUntil},#{status},'WAIT_USE_PRICE')
+        insert into supplier_quotes(customer_item_id,master_product_id,supplier_username,code,pricing_group,spec_model,purchase_price,sale_price,price_valid_until,status,pricing_status)
+        values(#{customerItemId},#{masterProductId},#{supplierUsername},#{code},#{pricingGroup},#{specModel},#{purchasePrice},#{salePrice},#{priceValidUntil},#{status},'WAIT_USE_PRICE')
     </insert>
 
     <select id="findCustomerOrder" resultType="com.suppliercustomer.pojo.CustomerOrder">
@@ -173,17 +173,25 @@
           and status='APPROVED'
     </select>
 
+    <select id="findAllSupplierSubmissionsByCode" resultType="com.suppliercustomer.pojo.Product">
+        select * from supplier_submissions
+        where code=#{code}
+          and supplier_username is not null
+          and supplier_username!=''
+        order by id
+    </select>
+
     <select id="listMatchedOrderItems" resultType="com.suppliercustomer.pojo.Product">
         select * from customer_order_items
         where order_no=#{orderNo}
           and code is not null
           and code!=''
-          and (status is null or status!='CANCELLED')
+          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
     </select>
 
     <select id="listAdminOrderRows" resultType="java.util.LinkedHashMap">
         select * from customer_order_items
-        order by order_no desc, id asc
+        order by updated_at desc, id asc
     </select>
 
     <select id="listAdminOrderItems" resultType="com.suppliercustomer.pojo.Product">
@@ -206,7 +214,8 @@
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
                  ) then 0 else 1 end,
-                 s.id desc
+                 s.updated_at asc,
+                 s.id asc
     </select>
 
     <select id="listSupplierProductRows" resultType="java.util.LinkedHashMap">
@@ -226,11 +235,12 @@
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
                  ) then 0 else 1 end,
-                 s.id desc
+                 s.updated_at asc,
+                 s.id asc
     </select>
 
     <select id="listSupplierSubmissions" resultType="com.suppliercustomer.pojo.Product">
-        select * from supplier_submissions where supplier_username=#{supplierUsername} order by id desc
+        select * from supplier_submissions where supplier_username=#{supplierUsername} order by id asc
     </select>
 
     <select id="listSupplierQuotes" resultType="com.suppliercustomer.pojo.SupplierQuote">
@@ -297,15 +307,13 @@
     <select id="listSupplierQuoteItems" resultType="com.suppliercustomer.pojo.SupplierQuote">
         select * from supplier_quotes
         where supplier_username=#{supplierUsername}
-          and (pricing_group=#{orderNo} or order_no=#{orderNo})
+          and pricing_group=#{orderNo}
         order by id
     </select>
 
     <select id="listSupplierQuoteItemDetails" resultType="java.util.LinkedHashMap">
         select q.id,
-               q.order_no,
                q.customer_item_id,
-               q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
                q.pricing_group,
@@ -331,15 +339,13 @@
         left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
         left join customer_order_items i on q.customer_item_id=i.id
         where q.supplier_username=#{supplierUsername}
-          and (q.pricing_group=#{orderNo} or q.order_no=#{orderNo})
+          and q.pricing_group=#{orderNo}
         order by q.id
     </select>
 
     <select id="listAdminSupplierQuoteItemDetails" resultType="java.util.LinkedHashMap">
         select q.id,
-               q.order_no,
                q.customer_item_id,
-               q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
                q.pricing_group,
@@ -365,15 +371,13 @@
         left join supplier_submissions s on s.supplier_username=q.supplier_username and s.code=q.code
         left join customer_order_items i on q.customer_item_id=i.id
         where q.supplier_username=#{supplierUsername}
-          and (q.pricing_group=#{orderNo} or q.order_no=#{orderNo})
+          and q.pricing_group=#{orderNo}
         order by q.id
     </select>
 
     <select id="listPricingAuditRows" resultType="java.util.LinkedHashMap">
         select q.id,
-               q.order_no,
                q.customer_item_id,
-               q.customer_username,
                q.supplier_username,
                coalesce(q.code, i.code) code,
                q.pricing_group,
@@ -406,7 +410,7 @@
         select *
         from customer_order_items
         where customer_username=#{customerUsername}
-        order by order_no desc, id asc
+        order by updated_at desc, id asc
     </select>
 
     <select id="listCustomerOrderItems" resultType="com.suppliercustomer.pojo.Product">
@@ -418,11 +422,25 @@
     <select id="listCustomerProducts" resultType="com.suppliercustomer.pojo.Product">
         select * from customer_products
         where customer_username=#{customerUsername}
-        order by id desc
+        order by id asc
     </select>
 
     <select id="listInternalProducts" resultType="com.suppliercustomer.pojo.Product">
-        select * from internal_products order by id desc
+        select * from internal_products order by id asc
+    </select>
+
+    <select id="countActiveCustomerOrderItemsByCode" resultType="int">
+        select count(*) from customer_order_items
+        where code=#{code}
+          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+    </select>
+
+    <select id="listActiveOrderNosByCode" resultType="java.lang.String">
+        select distinct order_no from customer_order_items
+        where code=#{code}
+          and order_no is not null
+          and order_no!=''
+          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
     </select>
 
     <update id="cancelCustomerOrder">
@@ -473,7 +491,17 @@
             updated_at=current_timestamp
         where pricing_group=#{pricingGroup}
           and code=#{code}
-          and (status is null or status!='CANCELLED')
+          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+    </update>
+
+    <update id="markCustomerOrderItemsCompletedByCode">
+        update customer_order_items
+        set purchase_price=#{purchasePrice},
+            sale_price=#{salePrice},
+            status='QUOTE_COMPLETED',
+            updated_at=current_timestamp
+        where code=#{code}
+          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
     </update>
 
     <update id="markCustomerOrderCompletedIfReady">
@@ -505,10 +533,7 @@
         set pricing_status='NOT_USE_PRICE', updated_at=current_timestamp
         where id!=#{id}
           and code=#{code}
-          and (
-            (#{pricingGroup} is not null and #{pricingGroup}!='' and pricing_group=#{pricingGroup})
-            or ((#{pricingGroup} is null or #{pricingGroup}='') and order_no=#{orderNo})
-          )
+          and pricing_group=#{pricingGroup}
     </update>
 
     <update id="updateCustomerProductByCustomer" parameterType="com.suppliercustomer.pojo.Product">
@@ -600,6 +625,15 @@
             updated_at=current_timestamp
         where supplier_username=#{supplierUsername}
           and code=#{code}
+    </update>
+
+    <update id="linkSupplierSubmissionToInternal">
+        update supplier_submissions
+        set new_code=#{newCode},
+            master_product_id=#{masterProductId},
+            status='APPROVED',
+            updated_at=current_timestamp
+        where id=#{id}
     </update>
 
     <select id="findSupplierQuote" resultType="com.suppliercustomer.pojo.SupplierQuote">

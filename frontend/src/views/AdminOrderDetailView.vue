@@ -10,7 +10,8 @@ const router = useRouter()
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
 const hiddenColumns = ['source_type', 'sourceType', 'serial_no', 'serialNo']
-const state = reactive({ items: [], priceItem: {}, modal: '', page: 1, pageSize: 15, columnWidths: {} })
+const state = reactive({ items: [], priceItem: {}, modal: '', page: 1, pageSize: 1000, columnWidths: {} })
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 const orderNo = computed(() => route.params.orderNo)
 const pageTotal = computed(() => Math.max(1, Math.ceil(state.items.length / state.pageSize)))
 const pagedItems = computed(() => {
@@ -149,10 +150,7 @@ onMounted(load)
         <label>
           每页
           <select v-model.number="state.pageSize" @change="changePageSize">
-            <option :value="15">15</option>
-            <option :value="30">30</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
           </select>
           条
         </label>

@@ -38,7 +38,7 @@ const state = reactive({
   file: null,
   quoteFile: null,
   page: 1,
-  pageSize: 15,
+  pageSize: 1000,
   globalSearch: '',
   columnFilters: {},
   filterMenu: '',
@@ -49,8 +49,11 @@ const state = reactive({
   columnOrder: {},
   columnWidths: {},
   dragColumn: '',
-  sidebarCollapsed: false
+  sidebarCollapsed: false,
+  quoteReminderShown: false
 })
+
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 
 const sourceRows = computed(() => state.products)
 const baseColumns = computed(() => productColumns)
@@ -83,6 +86,16 @@ function fieldInputType(fieldKey) {
 async function load() {
   state.products = await request.get('/supplier/submissions')
   if (state.page > pageTotal.value) state.page = pageTotal.value
+  showQuoteReminder()
+}
+
+function showQuoteReminder() {
+  if (state.quoteReminderShown) return
+  const count = state.products.filter(row => valueOf(row, 'quote_status') === 'NEED_QUOTE').length
+  state.quoteReminderShown = true
+  if (count > 0) {
+    window.alert(`\u60a8\u6709${count}\u4e2a\u4ea7\u54c1\u9700\u8981\u66f4\u65b0\u62a5\u4ef7`)
+  }
 }
 
 async function switchView(view) {
@@ -604,10 +617,7 @@ onMounted(async () => {
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
-                <option :value="15">15</option>
-                <option :value="30">30</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
+                <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
               </select>
               条
             </label>

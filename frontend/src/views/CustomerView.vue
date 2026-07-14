@@ -50,7 +50,7 @@ const state = reactive({
   passwordForm: { password: '', confirmPassword: '' },
   modal: '',
   page: 1,
-  pageSize: 15,
+  pageSize: 1000,
   globalSearch: '',
   columnFilters: {},
   filterMenu: '',
@@ -61,6 +61,8 @@ const state = reactive({
   dragColumn: '',
   sidebarCollapsed: false
 })
+
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 
 const sourceRows = computed(() => {
   if (state.view === 'orders') return state.orders
@@ -564,10 +566,7 @@ onMounted(async () => {
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
-                <option :value="15">15</option>
-                <option :value="30">30</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
+                <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
               </select>
               条
             </label>

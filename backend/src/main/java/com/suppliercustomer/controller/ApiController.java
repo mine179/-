@@ -213,6 +213,21 @@ public class ApiController {
         return Result.success(message(productService.generateQuotesForItems(itemIds)));
     }
 
+    @PostMapping("/admin/pricing-audit/send-quotes")
+    public Result sendPricingAuditQuoteTasks(@RequestHeader("Authorization") String authorization,
+                                             @RequestBody List<String> codes) {
+        userService.requireRole(authorization, "ADMIN");
+        return Result.success(message(productService.sendPricingAuditQuoteTasks(codes)));
+    }
+
+    @PostMapping("/admin/pricing-audit/use-price")
+    public Result usePricingAuditPrice(@RequestHeader("Authorization") String authorization,
+                                       @RequestBody Map<String, Object> price) {
+        userService.requireRole(authorization, "ADMIN");
+        productService.usePricingAuditPrice(price);
+        return Result.success();
+    }
+
     @PutMapping("/admin/quotes/{id}")
     public Result adminUpdateQuote(@RequestHeader("Authorization") String authorization,
                                    @PathVariable Long id,

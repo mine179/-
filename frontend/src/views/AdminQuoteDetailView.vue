@@ -17,7 +17,8 @@ const columns = [
   'color', 'category', 'craft_material', 'spec_model', 'common_model', 'size_value',
   'resolution', 'model_remark', 'purchase_price', 'status', 'updated_at'
 ]
-const state = reactive({ items: [], editItem: {}, modal: '', page: 1, pageSize: 15, columnWidths: {} })
+const state = reactive({ items: [], editItem: {}, modal: '', page: 1, pageSize: 1000, columnWidths: {} })
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 const pageTotal = computed(() => Math.max(1, Math.ceil(state.items.length / state.pageSize)))
 const pagedItems = computed(() => {
   const start = (state.page - 1) * state.pageSize
@@ -147,10 +148,7 @@ onMounted(load)
         <label>
           每页
           <select v-model.number="state.pageSize" @change="changePageSize">
-            <option :value="15">15</option>
-            <option :value="30">30</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
           </select>
           条
         </label>

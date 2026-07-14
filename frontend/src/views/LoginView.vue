@@ -1,18 +1,12 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../request'
 
 const router = useRouter()
 const busy = ref(false)
 const message = ref('')
-const roles = [
-  { key: 'SUPPLIER', label: '供应商', hint: '提交产品，填写供应价' },
-  { key: 'CUSTOMER', label: '客户', hint: '下载模板，上传订单' },
-  { key: 'ADMIN', label: '总后台', hint: '账号、审核、六表管理' }
-]
-const form = reactive({ role: 'SUPPLIER', username: '', password: '' })
-const roleName = computed(() => roles.find(role => role.key === form.role)?.label || '')
+const form = reactive({ username: '', password: '' })
 
 async function login() {
   busy.value = true
@@ -35,30 +29,17 @@ async function login() {
 <template>
   <main class="login-screen">
     <div class="brand">
-      <p>供应商到客户</p>
-      <h1>产品编码、订单和报价管理</h1>
+      <p>{{ '\u4f9b\u5e94\u5546\u5230\u5ba2\u6237' }}</p>
+      <h1>{{ '\u4ea7\u54c1\u7f16\u7801\u3001\u8ba2\u5355\u548c\u62a5\u4ef7\u7ba1\u7406' }}</h1>
     </div>
 
     <div class="login-panel">
-      <div class="role-grid">
-        <button
-          v-for="role in roles"
-          :key="role.key"
-          class="role-card"
-          :class="{ active: form.role === role.key }"
-          @click="form.role = role.key"
-        >
-          <strong>{{ role.label }}</strong>
-          <span>{{ role.hint }}</span>
-        </button>
-      </div>
-
       <p v-if="message" class="notice">{{ message }}</p>
       <form class="form" @submit.prevent="login">
-        <h2>{{ roleName }}登录</h2>
-        <input v-model="form.username" placeholder="账号" required>
-        <input v-model="form.password" placeholder="密码" type="password" required>
-        <button class="primary" :disabled="busy">登录</button>
+        <h2>{{ '\u767b\u5f55' }}</h2>
+        <input v-model="form.username" :placeholder="'\u8d26\u53f7'" required>
+        <input v-model="form.password" :placeholder="'\u5bc6\u7801'" type="password" required>
+        <button class="primary" :disabled="busy">{{ busy ? '\u767b\u5f55\u4e2d...' : '\u767b\u5f55' }}</button>
       </form>
     </div>
   </main>

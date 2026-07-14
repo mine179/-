@@ -13,5 +13,5 @@ export const productFields = [
   ['modelRemark', '型号备注'],
   ['salePrice', '销售价格'],
   ['purchasePrice', '供应价'],
-  ['priceValidUntil', '\u4ef7\u683c\u6709\u6548\u671f\u9650']
+  ['priceValidUntil', '价格有效期限']
 ]

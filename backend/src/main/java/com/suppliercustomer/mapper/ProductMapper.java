@@ -74,6 +74,8 @@ public interface ProductMapper {
 
     List<Product> findSupplierSubmissionsByCode(String code);
 
+    List<Product> findAllSupplierSubmissionsByCode(String code);
+
     List<Product> listMatchedOrderItems(String orderNo);
 
     List<Map<String, Object>> listAdminOrderRows();
@@ -111,6 +113,10 @@ public interface ProductMapper {
 
     List<Product> listInternalProducts();
 
+    int countActiveCustomerOrderItemsByCode(String code);
+
+    List<String> listActiveOrderNosByCode(String code);
+
     void cancelCustomerOrder(String orderNo);
 
     void cancelCustomerOrderItemsByOrderNo(String orderNo);
@@ -133,6 +139,10 @@ public interface ProductMapper {
                                                 @Param("code") String code,
                                                 @Param("purchasePrice") java.math.BigDecimal purchasePrice,
                                                 @Param("salePrice") java.math.BigDecimal salePrice);
+
+    void markCustomerOrderItemsCompletedByCode(@Param("code") String code,
+                                               @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                               @Param("salePrice") java.math.BigDecimal salePrice);
 
     void markCustomerOrderCompletedIfReady(String orderNo);
 
@@ -163,6 +173,10 @@ public interface ProductMapper {
                                        @Param("code") String code,
                                        @Param("purchasePrice") java.math.BigDecimal purchasePrice,
                                        @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
+
+    void linkSupplierSubmissionToInternal(@Param("id") Long id,
+                                          @Param("newCode") String newCode,
+                                          @Param("masterProductId") Long masterProductId);
 
     SupplierQuote findSupplierQuote(Long id);
 

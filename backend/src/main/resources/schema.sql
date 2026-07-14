@@ -117,7 +117,7 @@ ALTER TABLE supplier_submissions ADD COLUMN IF NOT EXISTS price_valid_until DATE
 CREATE TABLE IF NOT EXISTS customer_orders (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_no VARCHAR(60) NOT NULL UNIQUE,
-    customer_username VARCHAR(80) NOT NULL,
+    customer_username VARCHAR(80),
     status VARCHAR(30) DEFAULT 'SUBMITTED',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS customer_orders (
 
 CREATE TABLE IF NOT EXISTS customer_order_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_no VARCHAR(60) NOT NULL,
+    order_no VARCHAR(60),
     series VARCHAR(120),
     brand VARCHAR(120),
     code VARCHAR(120),
@@ -213,11 +213,9 @@ ALTER TABLE unmatched_customer_items ADD COLUMN IF NOT EXISTS price_valid_until 
 
 CREATE TABLE IF NOT EXISTS supplier_quotes (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_no VARCHAR(60) NOT NULL,
     customer_item_id BIGINT,
     master_product_id BIGINT,
     supplier_username VARCHAR(80) NOT NULL,
-    customer_username VARCHAR(80) NOT NULL,
     code VARCHAR(120),
     spec_model VARCHAR(200),
     purchase_price DECIMAL(14,2),
@@ -230,3 +228,5 @@ CREATE TABLE IF NOT EXISTS supplier_quotes (
 ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS pricing_status VARCHAR(30) DEFAULT 'WAIT_USE_PRICE';
 ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS pricing_group VARCHAR(80);
 ALTER TABLE supplier_quotes ADD COLUMN IF NOT EXISTS price_valid_until DATE;
+ALTER TABLE supplier_quotes DROP COLUMN IF EXISTS order_no;
+ALTER TABLE supplier_quotes DROP COLUMN IF EXISTS customer_username;

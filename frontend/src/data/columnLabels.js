@@ -35,8 +35,8 @@ export const columnLabels = {
   status: '状态',
   pricingStatus: '状态',
   pricing_status: '状态',
-  link_status: '\u94fe\u63a5\u72b6\u6001',
-  quote_status: '\u62a5\u4ef7\u72b6\u6001',
+  link_status: '链接状态',
+  quote_status: '报价状态',
   matched: '是否匹配',
   masterProductId: '关联产品ID',
   master_product_id: '关联产品ID',
@@ -52,11 +52,6 @@ export const columnLabels = {
   created_at: '创建时间',
   updatedAt: '更新时间',
   updated_at: '更新时间',
-  manual_price_1: '参考价格1',
-  manual_price_2: '参考价格2',
-  manual_price_3: '参考价格3',
-  manual_price_4: '参考价格4',
-  manual_price_5: '参考价格5',
   order_price_1: '最近订单价格1',
   order_price_2: '最近订单价格2',
   order_price_3: '最近订单价格3',
@@ -64,20 +59,25 @@ export const columnLabels = {
   order_price_5: '最近订单价格5',
   ref_price_1: '参考价格1',
   supplier_1: '供应商1',
+  ref_valid_until_1: '参考有效期1',
   ref_price_2: '参考价格2',
   supplier_2: '供应商2',
+  ref_valid_until_2: '参考有效期2',
   ref_price_3: '参考价格3',
   supplier_3: '供应商3',
+  ref_valid_until_3: '参考有效期3',
   ref_price_4: '参考价格4',
   supplier_4: '供应商4',
+  ref_valid_until_4: '参考有效期4',
   ref_price_5: '参考价格5',
   supplier_5: '供应商5',
-  priceValidUntil: '\u4ef7\u683c\u6709\u6548\u671f\u9650',
-  price_valid_until: '\u4ef7\u683c\u6709\u6548\u671f\u9650',
-  pricingGroup: '\u5b9a\u4ef7\u5206\u7ec4',
-  pricing_group: '\u5b9a\u4ef7\u5206\u7ec4',
-  price_source_status: '\u4ef7\u683c\u6765\u6e90',
-  valid_price: '\u6709\u6548\u671f\u5185\u4ef7\u683c'
+  priceValidUntil: '价格有效期限',
+  price_valid_until: '价格有效期限',
+  pricingGroup: '定价分组',
+  pricing_group: '定价分组',
+  price_source_status: '价格来源',
+  current_order_status: '当前是否有订单',
+  valid_price: '有效期内价格'
 }
 
 export function columnLabel(key) {
@@ -90,29 +90,30 @@ const statusLabels = {
   CODE_NOT_FOUND: '系统无该物料编码',
   APPROVED: '已链接',
   SUBMITTED: '已提交',
-  SUBMITTED_ORDER: '\u5df2\u63d0\u4ea4\u8ba2\u5355',
+  SUBMITTED_ORDER: '已提交订单',
   QUOTE_GENERATED: '已生成报价任务',
-  QUOTE_COMPLETED: '\u5df2\u5b8c\u6210\u62a5\u4ef7',
+  QUOTE_COMPLETED: '已完成报价',
   COMPLETED: '已完成订单',
   ACTIVE: '正常',
   CANCELLED: '已作废',
   WAIT_SUPPLIER_PRICE: '待供应商报价',
   SUPPLIER_PRICED: '已报价',
-  NEED_QUOTE: '\u9700\u8981\u66f4\u65b0\u62a5\u4ef7',
-  QUOTED: '\u5df2\u62a5\u4ef7',
+  NEED_QUOTE: '需要更新报价',
+  QUOTED: '已报价',
   WAIT_USE_PRICE: '待采用价格',
   USED_PRICE: '已采用价格',
   NOT_USE_PRICE: '不采用价格',
   MANUAL: '手动',
-  VALID_PRICE: '\u6709\u6548\u671f\u5185\u4ef7\u683c',
-  NO_VALID_PRICE: '\u65e0\u6709\u6548\u671f\u4ef7\u683c'
+  VALID_PRICE: '有效期内价格',
+  NO_VALID_PRICE: '无有效期价格',
+  HAS_ORDER: '有订单',
+  NO_ORDER: '无订单'
 }
 
 export function formatCell(value) {
   if (value === null || value === undefined) return ''
   if (typeof value === 'boolean') return value ? '是' : '否'
   if (typeof value !== 'string') return value
-
   if (statusLabels[value]) return statusLabels[value]
 
   const isoDateTime = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/)

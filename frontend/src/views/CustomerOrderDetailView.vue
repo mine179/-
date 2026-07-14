@@ -15,7 +15,7 @@ const hiddenColumns = ['serial_no', 'serialNo', 'code', 'newCode', 'new_code', '
 const state = reactive({
   rows: [],
   page: 1,
-  pageSize: 15,
+  pageSize: 1000,
   globalSearch: '',
   columnFilters: {},
   filterMenu: '',
@@ -25,6 +25,8 @@ const state = reactive({
   columnWidths: {},
   dragColumn: ''
 })
+
+const pageSizeOptions = [1000, 2000, 3000, 5000]
 
 const baseColumns = computed(() => Object.keys(state.rows[0] || {}).filter(key => !hiddenColumns.includes(key)))
 const columns = computed(() => {
@@ -308,10 +310,7 @@ onMounted(load)
         <label>
           每页
           <select v-model.number="state.pageSize" @change="changePageSize">
-            <option :value="15">15</option>
-            <option :value="30">30</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }}</option>
           </select>
           条
         </label>
