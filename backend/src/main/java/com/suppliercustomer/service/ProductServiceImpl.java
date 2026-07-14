@@ -39,6 +39,7 @@ import java.util.UUID;
 
 @Service
 public class ProductServiceImpl implements ProductService {
+    private static final String VALID_PRICE_SUPPLIER = "\u6709\u6548\u671f\u5185\u4ef7\u683c";
     private static final String[] HEADERS = {
             "系列", "品牌", "物料编码", "新编码", "颜色", "类别", "工艺/材质", "规格型号", "通用型号",
             "尺寸", "分辨率", "型号备注", "销售价格", "供应价"
@@ -60,7 +61,7 @@ public class ProductServiceImpl implements ProductService {
             new FieldDef("供应价", "purchase_price", "decimal"),
             new FieldDef("\u4ef7\u683c\u6709\u6548\u671f\u9650", "price_valid_until", "date")
     );
-    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "sale_price", "price_valid_until");
+    private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "sale_price");
     private static final List<FieldDef> CUSTOMER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "code", "new_code", "purchase_price");
     private static final List<FieldDef> SUPPLIER_QUOTE_PRICE_FIELDS = Arrays.asList(
             new FieldDef("????", "code"),
@@ -217,6 +218,15 @@ public class ProductServiceImpl implements ProductService {
         CustomerOrder order = productMapper.findCustomerOrder(orderNo);
         ensureOrderCanGenerateQuote(order);
         List<Product> items = productMapper.listMatchedOrderItems(orderNo);
+        List<Long> itemIds = new ArrayList<>();
+        for (Product item : items) {
+            if (item.getId() != null) {
+                itemIds.add(item.getId());
+            }
+        }
+        if (itemIds.size() >= 0) {
+            return generateQuotesForItems(itemIds);
+        }
         int count = 0;
         for (Product item : items) {
             List<Product> suppliers = productMapper.findSupplierSubmissionsByCode(item.getCode());
@@ -282,7 +292,7 @@ public class ProductServiceImpl implements ProductService {
             if (hasValidInternalPrice(internal, today)) {
                 SupplierQuote quote = quoteFromItem(firstItem, internal);
                 quote.setPricingGroup(pricingGroup);
-                quote.setSupplierUsername("\u6709\u6548\u671f\u5185\u4ef7\u683c");
+                quote.setSupplierUsername(VALID_PRICE_SUPPLIER);
                 quote.setMasterProductId(internal.getId());
                 quote.setPurchasePrice(internal.getPurchasePrice());
                 quote.setSalePrice(internal.getSalePrice());
@@ -468,9 +478,7 @@ public class ProductServiceImpl implements ProductService {
                 quote.setPriceValidUntil(dateValue(priceValidUntil));
                 int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
                 updated += changed;
-                if (changed > 0) {
-                    syncSupplierProductPrice(quote);
-                }
+                syncSupplierProductPrice(quote);
             } catch (NumberFormatException e) {
                 // 非数字价格忽略，不新增也不中断。
             }
@@ -492,7 +500,6 @@ public class ProductServiceImpl implements ProductService {
     public void addSupplierSubmission(String supplierUsername, Product product) {
         clearProtectedCodes(product);
         product.setSupplierUsername(supplierUsername);
-        product.setPriceValidUntil(null);
         applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
         syncSupplierManualPriceToInternal(product);
@@ -503,7 +510,6 @@ public class ProductServiceImpl implements ProductService {
         if (empty(product.getSupplierUsername())) {
             throw new CustomException("SUPPLIER_REQUIRED");
         }
-        product.setPriceValidUntil(null);
         applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
         syncSupplierManualPriceToInternal(product);
@@ -540,7 +546,7 @@ public class ProductServiceImpl implements ProductService {
         quote.setId(id);
         quote.setSupplierUsername(supplierUsername);
         productMapper.supplierUpdateQuote(quote);
-        syncSupplierProductPrice(existing, quote.getPurchasePrice());
+        syncSupplierProductPrice(mergeQuoteForSync(existing, quote));
     }
 
     @Override
@@ -555,7 +561,7 @@ public class ProductServiceImpl implements ProductService {
             SupplierQuote existing = productMapper.findSupplierQuote(quote.getId());
             quote.setSupplierUsername(supplierUsername);
             productMapper.supplierUpdateQuote(quote);
-            syncSupplierProductPrice(existing, quote.getPurchasePrice());
+            syncSupplierProductPrice(mergeQuoteForSync(existing, quote));
         }
     }
 
@@ -569,10 +575,8 @@ public class ProductServiceImpl implements ProductService {
                 continue;
             }
             quote.setSupplierUsername(supplierUsername);
-            int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
-            if (changed > 0) {
-                syncSupplierProductPrice(quote);
-            }
+            productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+            syncSupplierProductPrice(quote);
         }
     }
 
@@ -585,10 +589,8 @@ public class ProductServiceImpl implements ProductService {
             if (quote == null || empty(quote.getSupplierUsername()) || empty(quote.getCode()) || quote.getPurchasePrice() == null) {
                 continue;
             }
-            int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
-            if (changed > 0) {
-                syncSupplierProductPrice(quote);
-            }
+            productMapper.supplierUpdateQuoteByOrderAndCode(quote);
+            syncSupplierProductPrice(quote);
         }
     }
 
@@ -653,9 +655,7 @@ public class ProductServiceImpl implements ProductService {
                 quote.setPriceValidUntil(dateValue(priceValidUntil));
                 int changed = productMapper.supplierUpdateQuoteByOrderAndCode(quote);
                 updated += changed;
-                if (changed > 0) {
-                    syncSupplierProductPrice(quote);
-                }
+                syncSupplierProductPrice(quote);
             } catch (NumberFormatException e) {
                 // 非数字价格忽略，不新增也不中断。
             }
@@ -1295,7 +1295,6 @@ public class ProductServiceImpl implements ProductService {
 
     private Map<String, Object> supplierProductData(Product product) {
         Map<String, Object> data = productBaseData(product);
-        data.remove("price_valid_until");
         data.put("supplier_username", product.getSupplierUsername());
         data.put("status", product.getStatus());
         data.put("master_product_id", product.getMasterProductId());
@@ -1381,6 +1380,18 @@ public class ProductServiceImpl implements ProductService {
         syncSupplierProductPrice(quote, quote.getPurchasePrice());
     }
 
+    private SupplierQuote mergeQuoteForSync(SupplierQuote existing, SupplierQuote update) {
+        if (existing == null || update == null) {
+            return update == null ? existing : update;
+        }
+        SupplierQuote merged = new SupplierQuote();
+        merged.setSupplierUsername(empty(update.getSupplierUsername()) ? existing.getSupplierUsername() : update.getSupplierUsername());
+        merged.setCode(empty(update.getCode()) ? existing.getCode() : update.getCode());
+        merged.setPurchasePrice(update.getPurchasePrice() == null ? existing.getPurchasePrice() : update.getPurchasePrice());
+        merged.setPriceValidUntil(update.getPriceValidUntil() == null ? existing.getPriceValidUntil() : update.getPriceValidUntil());
+        return merged;
+    }
+
     private void syncSupplierManualPriceToInternal(Product product) {
         if (product == null
                 || empty(product.getCode())
@@ -1457,7 +1468,7 @@ public class ProductServiceImpl implements ProductService {
 
     private boolean hasValidPriceRow(List<Map<String, Object>> rows) {
         for (Map<String, Object> row : rows) {
-            if ("有效期内价格".equals(stringValue(row.get("supplier_username")))) {
+            if (VALID_PRICE_SUPPLIER.equals(stringValue(row.get("supplier_username")))) {
                 return true;
             }
         }
@@ -1466,7 +1477,7 @@ public class ProductServiceImpl implements ProductService {
 
     private Object validPriceValue(List<Map<String, Object>> rows) {
         for (Map<String, Object> row : rows) {
-            if ("有效期内价格".equals(stringValue(row.get("supplier_username")))) {
+            if (VALID_PRICE_SUPPLIER.equals(stringValue(row.get("supplier_username")))) {
                 return row.get("purchase_price");
             }
         }

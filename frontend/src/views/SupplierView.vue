@@ -18,8 +18,10 @@ const views = [
 ]
 
 const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && key !== 'priceValidUntil')
+const supplierProductCreateFields = productFields.filter(([key]) => key !== 'salePrice')
+const supplierProductDisplayFields = productFields.filter(([key]) => key !== 'salePrice')
 const quoteProductFields = supplierProductFields.filter(([key]) => key !== 'priceValidUntil')
-const productColumns = ['id', 'link_status', 'quote_status', ...supplierProductFields.map(([key]) => key), 'pending_quote_count', 'updatedAt']
+const productColumns = ['id', 'link_status', 'quote_status', ...supplierProductDisplayFields.map(([key]) => key), 'updatedAt']
 const quoteColumns = ['id', 'status', ...quoteProductFields.map(([key]) => key), 'updatedAt']
 const quoteItemColumns = ['brand', 'code', 'newCode', 'craftMaterial', 'specModel', 'commonModel', 'purchasePrice', 'priceValidUntil']
 
@@ -657,7 +659,7 @@ onMounted(async () => {
       <section class="modal">
         <header class="modal-head"><h3>{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</h3><button @click="state.modal = ''">{{ closeText }}</button></header>
         <div class="modal-body product-form">
-          <input v-for="field in supplierProductFields" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
+          <input v-for="field in supplierProductCreateFields" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
           <button class="primary" @click="submitProduct">{{ '\u4fdd\u5b58' }}</button>
         </div>
       </section>

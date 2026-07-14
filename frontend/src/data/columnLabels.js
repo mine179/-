@@ -37,7 +37,6 @@ export const columnLabels = {
   pricing_status: '状态',
   link_status: '\u94fe\u63a5\u72b6\u6001',
   quote_status: '\u62a5\u4ef7\u72b6\u6001',
-  pending_quote_count: '\u5f85\u62a5\u4ef7\u6570',
   matched: '是否匹配',
   masterProductId: '关联产品ID',
   master_product_id: '关联产品ID',

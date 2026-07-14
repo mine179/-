@@ -199,12 +199,6 @@
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
                ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
-               (
-                    select count(*) from supplier_quotes q
-                    where q.supplier_username=s.supplier_username
-                      and q.code=s.code
-                      and q.status='WAIT_SUPPLIER_PRICE'
-               ) pending_quote_count
         from supplier_submissions s
         order by case when exists (
                     select 1 from supplier_quotes q
@@ -224,12 +218,6 @@
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
                ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
-               (
-                    select count(*) from supplier_quotes q
-                    where q.supplier_username=s.supplier_username
-                      and q.code=s.code
-                      and q.status='WAIT_SUPPLIER_PRICE'
-               ) pending_quote_count
         from supplier_submissions s
         where s.supplier_username=#{supplierUsername}
         order by case when exists (
@@ -575,7 +563,10 @@
 
     <update id="supplierUpdateQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
         update supplier_quotes
-        set purchase_price=#{purchasePrice},status='SUPPLIER_PRICED',updated_at=current_timestamp
+        set purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
+            status='SUPPLIER_PRICED',
+            updated_at=current_timestamp
         where id=#{id} and supplier_username=#{supplierUsername}
     </update>
 

@@ -31,6 +31,8 @@ const navTree = [
 
 const protectedCodeFields = ['code', 'newCode']
 const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && key !== 'priceValidUntil')
+const supplierProductCreateFields = productFields.filter(([key]) => key !== 'salePrice')
+const supplierProductDisplayFields = productFields.filter(([key]) => key !== 'salePrice')
 const customerProductFields = productFields.filter(([key]) => key !== 'purchasePrice' && !protectedCodeFields.includes(key))
 const priceTrendOrderFields = [
   ['order_price_1', '最近订单价格1'],
@@ -77,12 +79,12 @@ const nonProductFields = {
 }
 
 const productColumnKeys = productFields.map(([key]) => camelToSnake(key))
-const supplierProductColumnKeys = supplierProductFields.map(([key]) => camelToSnake(key))
+const supplierProductColumnKeys = supplierProductDisplayFields.map(([key]) => camelToSnake(key))
 const quoteProductColumnKeys = supplierProductColumnKeys.filter(key => key !== 'price_valid_until')
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
 const tableColumns = {
   internal: ['id', ...productColumnKeys, 'updated_at'],
-  supplier: ['id', 'link_status', 'quote_status', ...supplierProductColumnKeys, 'supplier_username', 'pending_quote_count', 'updated_at'],
+  supplier: ['id', 'link_status', 'quote_status', ...supplierProductColumnKeys, 'supplier_username', 'updated_at'],
   orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
   customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
   quotes: ['id', 'status', ...quoteProductColumnKeys, 'supplier_username', 'updated_at'],
@@ -1291,7 +1293,7 @@ onMounted(async () => {
         </div>
 
         <div v-if="state.modal === 'supplierProduct'" class="modal-body product-form">
-          <input v-for="field in [...supplierProductFields, ['supplierUsername', '\u4f9b\u5e94\u5546\u8d26\u53f7']]" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
+          <input v-for="field in [...supplierProductCreateFields, ['supplierUsername', '\u4f9b\u5e94\u5546\u8d26\u53f7']]" :key="field[0]" v-model="state.product[field[0]]" :type="fieldInputType(field[0])" :placeholder="field[1]">
           <button class="primary" @click="addSupplierProduct">{{ '\u4fdd\u5b58' }}</button>
         </div>
 
