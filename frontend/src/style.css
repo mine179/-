@@ -445,6 +445,56 @@ button.danger {
   padding-top: 4px;
 }
 
+.choice-list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 4px 2px 12px;
+}
+
+.choice-list label,
+.choice-row {
+  display: grid;
+  grid-template-columns: 34px minmax(120px, 1fr) minmax(140px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+}
+
+.choice-row {
+  grid-template-columns: 34px minmax(120px, 1fr) minmax(140px, 1fr);
+}
+
+.choice-row span:first-child {
+  grid-column: 2;
+}
+
+.choice-list input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+}
+
+.choice-list label {
+  border: 1px solid #d8e0e8;
+  border-radius: 6px;
+  background: #f9fbfd;
+}
+
+.choice-head {
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef3f8;
+  border-radius: 6px;
+}
+
+.choice-list em {
+  color: #64748b;
+  font-style: normal;
+  font-size: 12px;
+}
+
 .table-wrap {
   width: 100%;
   max-width: 100%;

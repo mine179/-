@@ -215,9 +215,23 @@ public class ApiController {
 
     @PostMapping("/admin/pricing-audit/send-quotes")
     public Result sendPricingAuditQuoteTasks(@RequestHeader("Authorization") String authorization,
-                                             @RequestBody List<String> codes) {
+                                             @RequestBody Map<String, Object> request) {
         userService.requireRole(authorization, "ADMIN");
-        return Result.success(message(productService.sendPricingAuditQuoteTasks(codes)));
+        return Result.success(message(productService.sendPricingAuditQuoteTasks(request)));
+    }
+
+    @GetMapping("/admin/pricing-audit/{code}/suppliers")
+    public Result pricingAuditSuppliers(@RequestHeader("Authorization") String authorization,
+                                        @PathVariable String code) {
+        userService.requireRole(authorization, "ADMIN");
+        return Result.success(productService.listPricingAuditSuppliers(code));
+    }
+
+    @GetMapping("/admin/pricing-audit/{code}/orders")
+    public Result pricingAuditOrders(@RequestHeader("Authorization") String authorization,
+                                     @PathVariable String code) {
+        userService.requireRole(authorization, "ADMIN");
+        return Result.success(productService.listPricingAuditOrders(code));
     }
 
     @PostMapping("/admin/pricing-audit/use-price")

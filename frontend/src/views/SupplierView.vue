@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../request'
 import { productFields } from '../data/productFields'
@@ -86,7 +86,8 @@ function fieldInputType(fieldKey) {
 async function load() {
   state.products = await request.get('/supplier/submissions')
   if (state.page > pageTotal.value) state.page = pageTotal.value
-  showQuoteReminder()
+  await nextTick()
+  window.setTimeout(showQuoteReminder, 0)
 }
 
 function showQuoteReminder() {

@@ -108,6 +108,7 @@ const state = reactive({
   editRow: {},
   priceTrendRows: [],
   pricingQuote: {},
+  quoteSendConfirm: { codes: [], suppliers: [], selectedTargets: [] },
   priceItem: {},
   activeQuoteTitle: '',
   quoteItems: [],
@@ -495,10 +496,6 @@ function openUseSupplierQuote(item) {
 }
 
 async function useSupplierQuote(option) {
-  if (false && !option?.quoteId) {
-    toast('没有可采用的价格')
-    return
-  }
   const price = option.purchasePrice
   if (!price) {
     toast('请先填写供应价')
@@ -508,12 +505,31 @@ async function useSupplierQuote(option) {
     toast('请先填写销售价')
     return
   }
+  const orders = await request.get(`/admin/pricing-audit/${encodeURIComponent(state.pricingQuote.code)}/orders`)
+  if (!orders.length) {
+    toast('没有找到可采用价格的未完成订单')
+    return
+  }
+  state.pricingQuote.selectedOption = option
+  state.pricingQuote.orders = orders
+  state.pricingQuote.selectedOrderNos = orders.map(item => valueOf(item, 'order_no'))
+  openModal('usePriceOrders')
+}
+
+async function confirmUseSupplierQuote() {
+  const option = state.pricingQuote.selectedOption
+  const orderNos = state.pricingQuote.selectedOrderNos || []
+  if (!orderNos.length) {
+    toast('请至少选择一个订单')
+    return
+  }
   await request.post('/admin/pricing-audit/use-price', {
     code: state.pricingQuote.code,
-    purchasePrice: price,
+    purchasePrice: option.purchasePrice,
     salePrice: state.pricingQuote.salePrice,
     priceValidUntil: state.pricingQuote.priceValidUntil || option.priceValidUntil || null,
-    supplierUsername: option.supplierUsername
+    supplierUsername: option.supplierUsername,
+    orderNos
   })
   state.pricingQuote = {}
   closeModal()
@@ -539,38 +555,49 @@ async function sendPricingAuditQuotes(row) {
     toast('\u8bf7\u5148\u9009\u62e9\u6709\u8ba2\u5355\u7684\u7269\u6599')
     return
   }
-  const result = await request.post('/admin/pricing-audit/send-quotes', codes)
+  const suppliers = []
+  for (const code of Array.from(new Set(codes))) {
+    const rows = await request.get(`/admin/pricing-audit/${encodeURIComponent(code)}/suppliers`)
+    rows.forEach(item => {
+      suppliers.push({
+        code,
+        supplierUsername: valueOf(item, 'supplier_username'),
+        purchasePrice: valueOf(item, 'purchase_price'),
+        priceValidUntil: valueOf(item, 'price_valid_until')
+      })
+    })
+  }
+  if (!suppliers.length) {
+    toast('没有找到有该物料编码的供应商')
+    return
+  }
+  state.quoteSendConfirm = {
+    codes: Array.from(new Set(codes)),
+    suppliers,
+    selectedTargets: suppliers.map(item => `${item.code}|${item.supplierUsername}`)
+  }
+  openModal('sendQuotes')
+}
+
+async function confirmSendPricingAuditQuotes() {
+  if (!state.quoteSendConfirm.selectedTargets.length) {
+    toast('请至少选择一个供应商')
+    return
+  }
+  const result = await request.post('/admin/pricing-audit/send-quotes', {
+    codes: state.quoteSendConfirm.codes,
+    supplierTargets: state.quoteSendConfirm.selectedTargets
+  })
+  state.quoteSendConfirm = { codes: [], suppliers: [], selectedTargets: [] }
   state.selectedRows = state.selectedRows.filter(item => item.table !== 'pricingAudit')
+  closeModal()
   await load()
   await refreshLinkCounts()
   toast(`\u5df2\u53d1\u9001${Number(String(result.message || '').match(/\d+/)?.[0] || 0)}\u6761\u62a5\u4ef7\u4efb\u52a1`)
 }
 
 async function batchUsePricingAuditPrice() {
-  const rows = selectedPricingAuditRows()
-  if (!rows.length) {
-    toast('\u8bf7\u5148\u52fe\u9009\u8981\u91c7\u7528\u4ef7\u683c\u7684\u7269\u6599')
-    return
-  }
-  let count = 0
-  for (const row of rows) {
-    const option = bestPricingOption(row)
-    const salePrice = valueOf(row, 'sale_price')
-    const priceValidUntil = option?.priceValidUntil || valueOf(row, 'price_valid_until')
-    if (!option || !salePrice || !priceValidUntil) continue
-    await request.post('/admin/pricing-audit/use-price', {
-      code: valueOf(row, 'code'),
-      purchasePrice: option.purchasePrice,
-      salePrice,
-      priceValidUntil,
-      supplierUsername: option.supplierUsername
-    })
-    count++
-  }
-  state.selectedRows = state.selectedRows.filter(item => item.table !== 'pricingAudit')
-  await load()
-  await refreshLinkCounts()
-  toast(`\u5df2\u6279\u91cf\u91c7\u7528${count}\u6761\u4ef7\u683c`)
+  toast('请点击每行的采用价格，并在弹窗里确认订单范围')
 }
 
 function bestPricingOption(row) {
@@ -1042,7 +1069,7 @@ function rowStillUnlinked(row) {
 
 function rowNeedsQuote(row) {
   const status = String(valueOf(row, 'status') || '').toUpperCase()
-  return Boolean(valueOf(row, 'code')) && !['CANCELLED', 'COMPLETED', 'QUOTE_COMPLETED'].includes(status)
+  return Boolean(valueOf(row, 'code')) && !['CANCELLED', 'COMPLETED'].includes(status)
 }
 
 function rowNeedsSupplierPrice(row) {
@@ -1339,7 +1366,9 @@ onMounted(async () => {
           <h3 v-if="state.modal === 'approve'">{{ '\u94fe\u63a5\u7269\u6599\u7f16\u7801' }}</h3>
           <h3 v-if="state.modal === 'edit'">修改记录</h3>
           <h3 v-if="state.modal === 'quotePrice'">报价</h3>
+          <h3 v-if="state.modal === 'sendQuotes'">确认发送报价任务</h3>
           <h3 v-if="state.modal === 'usePrice'">{{ '\u91c7\u7528\u4ef7\u683c' }}</h3>
+          <h3 v-if="state.modal === 'usePriceOrders'">确认采用价格范围</h3>
           <h3 v-if="state.modal === 'orderItemPrice'">添加价格</h3>
           <h3 v-if="state.modal === 'priceTrend'">{{ '\u4ef7\u683c\u8d8b\u52bf' }}</h3>
           <h3 v-if="state.modal === 'quoteImport'">{{ '\u5bfc\u5165\u8868\u683c\u586b\u4ef7' }}</h3>
@@ -1460,7 +1489,7 @@ onMounted(async () => {
                   <td><input v-model="option.purchasePrice" :placeholder="'\u53c2\u8003\u4ef7\u683c'"></td>
                   <td>{{ option.priceValidUntil || '-' }}</td>
                   <td class="row-actions action-cell">
-                    <button class="primary" @click="useSupplierQuote(option)">{{ '\u91c7\u7528\u4ef7\u683c' }}</button>
+                    <button class="primary" @click="useSupplierQuote(option)">确认采用该价格</button>
                   </td>
                 </tr>
                 <tr v-if="!state.pricingQuote.options?.length">
@@ -1468,6 +1497,36 @@ onMounted(async () => {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div v-if="state.modal === 'sendQuotes'" class="modal-body">
+          <div class="choice-list">
+            <div class="choice-row choice-head">
+              <span>物料编码</span>
+              <span>供应商账号</span>
+            </div>
+            <label v-for="item in state.quoteSendConfirm.suppliers" :key="`${item.code}|${item.supplierUsername}`">
+              <input v-model="state.quoteSendConfirm.selectedTargets" type="checkbox" :value="`${item.code}|${item.supplierUsername}`">
+              <span>{{ item.code }}</span>
+              <strong>{{ item.supplierUsername }}</strong>
+            </label>
+          </div>
+          <div class="modal-body form-grid">
+            <button class="primary" @click="confirmSendPricingAuditQuotes">确认发送</button>
+          </div>
+        </div>
+
+        <div v-if="state.modal === 'usePriceOrders'" class="modal-body">
+          <div class="choice-list">
+            <label v-for="item in state.pricingQuote.orders" :key="valueOf(item, 'order_no')">
+              <input v-model="state.pricingQuote.selectedOrderNos" type="checkbox" :value="valueOf(item, 'order_no')">
+              <span>{{ valueOf(item, 'order_no') }}</span>
+              <strong>{{ valueOf(item, 'customer_username') }}</strong>
+            </label>
+          </div>
+          <div class="modal-body form-grid">
+            <button class="primary" @click="confirmUseSupplierQuote">确认采用到选中订单</button>
           </div>
         </div>
 

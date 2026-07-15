@@ -117,6 +117,13 @@ public interface ProductMapper {
 
     List<String> listActiveOrderNosByCode(String code);
 
+    List<Map<String, Object>> listActiveOrdersByCode(String code);
+
+    void markCustomerOrderItemsCompletedByCodeAndOrders(@Param("code") String code,
+                                                        @Param("orderNos") List<String> orderNos,
+                                                        @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                                        @Param("salePrice") java.math.BigDecimal salePrice);
+
     void cancelCustomerOrder(String orderNo);
 
     void cancelCustomerOrderItemsByOrderNo(String orderNo);

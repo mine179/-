@@ -186,7 +186,7 @@
         where order_no=#{orderNo}
           and code is not null
           and code!=''
-          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+          and (status is null or status not in ('CANCELLED','COMPLETED'))
     </select>
 
     <select id="listAdminOrderRows" resultType="java.util.LinkedHashMap">
@@ -430,17 +430,33 @@
     </select>
 
     <select id="countActiveCustomerOrderItemsByCode" resultType="int">
-        select count(*) from customer_order_items
-        where code=#{code}
-          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+        select count(*) from customer_order_items i
+        left join customer_orders o on o.order_no=i.order_no
+        where i.code=#{code}
+          and (i.status is null or i.status!='CANCELLED')
+          and (o.status is null or o.status not in ('CANCELLED','COMPLETED'))
     </select>
 
     <select id="listActiveOrderNosByCode" resultType="java.lang.String">
-        select distinct order_no from customer_order_items
-        where code=#{code}
-          and order_no is not null
-          and order_no!=''
-          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+        select distinct i.order_no from customer_order_items i
+        left join customer_orders o on o.order_no=i.order_no
+        where i.code=#{code}
+          and i.order_no is not null
+          and i.order_no!=''
+          and (i.status is null or i.status!='CANCELLED')
+          and (o.status is null or o.status not in ('CANCELLED','COMPLETED'))
+    </select>
+
+    <select id="listActiveOrdersByCode" resultType="java.util.LinkedHashMap">
+        select distinct i.order_no, i.customer_username
+        from customer_order_items i
+        left join customer_orders o on o.order_no=i.order_no
+        where i.code=#{code}
+          and i.order_no is not null
+          and i.order_no!=''
+          and (i.status is null or i.status!='CANCELLED')
+          and (o.status is null or o.status not in ('CANCELLED','COMPLETED'))
+        order by i.order_no
     </select>
 
     <update id="cancelCustomerOrder">
@@ -491,7 +507,12 @@
             updated_at=current_timestamp
         where pricing_group=#{pricingGroup}
           and code=#{code}
-          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+          and (status is null or status not in ('CANCELLED','COMPLETED'))
+          and not exists (
+              select 1 from customer_orders o
+              where o.order_no=customer_order_items.order_no
+                and o.status in ('CANCELLED','COMPLETED')
+          )
     </update>
 
     <update id="markCustomerOrderItemsCompletedByCode">
@@ -501,7 +522,31 @@
             status='QUOTE_COMPLETED',
             updated_at=current_timestamp
         where code=#{code}
-          and (status is null or status not in ('CANCELLED','COMPLETED','QUOTE_COMPLETED'))
+          and (status is null or status not in ('CANCELLED','COMPLETED'))
+          and not exists (
+              select 1 from customer_orders o
+              where o.order_no=customer_order_items.order_no
+                and o.status in ('CANCELLED','COMPLETED')
+          )
+    </update>
+
+    <update id="markCustomerOrderItemsCompletedByCodeAndOrders">
+        update customer_order_items
+        set purchase_price=#{purchasePrice},
+            sale_price=#{salePrice},
+            status='QUOTE_COMPLETED',
+            updated_at=current_timestamp
+        where code=#{code}
+          and order_no in
+          <foreach collection="orderNos" item="orderNo" open="(" separator="," close=")">
+              #{orderNo}
+          </foreach>
+          and (status is null or status not in ('CANCELLED','COMPLETED'))
+          and not exists (
+              select 1 from customer_orders o
+              where o.order_no=customer_order_items.order_no
+                and o.status in ('CANCELLED','COMPLETED')
+          )
     </update>
 
     <update id="markCustomerOrderCompletedIfReady">

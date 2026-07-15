@@ -417,11 +417,26 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public String sendPricingAuditQuoteTasks(List<String> codes) {
+        return sendPricingAuditQuoteTasks(codes, Collections.<String>emptyList(), Collections.<String>emptyList());
+    }
+
+    @Override
+    public String sendPricingAuditQuoteTasks(Map<String, Object> request) {
+        return sendPricingAuditQuoteTasks(
+                stringList(request.get("codes")),
+                stringList(request.get("supplierUsernames")),
+                stringList(request.get("supplierTargets"))
+        );
+    }
+
+    private String sendPricingAuditQuoteTasks(List<String> codes, List<String> selectedSuppliers, List<String> selectedTargets) {
         if (codes == null || codes.isEmpty()) {
             throw new CustomException("NO_SELECTED_ITEMS");
         }
         int count = 0;
         Set<String> sent = new HashSet<>();
+        Set<String> supplierSet = selectedSuppliers == null ? Collections.<String>emptySet() : new HashSet<>(selectedSuppliers);
+        Set<String> targetSet = selectedTargets == null ? Collections.<String>emptySet() : new HashSet<>(selectedTargets);
         for (String code : codes) {
             if (empty(code) || sent.contains(code)) {
                 continue;
@@ -433,6 +448,13 @@ public class ProductServiceImpl implements ProductService {
             }
             List<Product> suppliers = productMapper.findAllSupplierSubmissionsByCode(code);
             for (Product supplier : suppliers) {
+                String targetKey = code + "|" + supplier.getSupplierUsername();
+                if (!targetSet.isEmpty() && !targetSet.contains(targetKey)) {
+                    continue;
+                }
+                if (targetSet.isEmpty() && !supplierSet.isEmpty() && !supplierSet.contains(supplier.getSupplierUsername())) {
+                    continue;
+                }
                 SupplierQuote quote = new SupplierQuote();
                 quote.setCode(code);
                 quote.setPricingGroup(pricingGroup);
@@ -446,6 +468,31 @@ public class ProductServiceImpl implements ProductService {
             }
         }
         return "OK " + count;
+    }
+
+    @Override
+    public List<Map<String, Object>> listPricingAuditSuppliers(String code) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (empty(code)) {
+            return result;
+        }
+        for (Product supplier : productMapper.findAllSupplierSubmissionsByCode(code)) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("supplier_username", supplier.getSupplierUsername());
+            item.put("code", supplier.getCode());
+            item.put("purchase_price", supplier.getPurchasePrice());
+            item.put("price_valid_until", supplier.getPriceValidUntil());
+            result.add(item);
+        }
+        return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> listPricingAuditOrders(String code) {
+        if (empty(code)) {
+            return Collections.emptyList();
+        }
+        return productMapper.listActiveOrdersByCode(code);
     }
 
     @Override
@@ -466,8 +513,16 @@ public class ProductServiceImpl implements ProductService {
         if (priceValidUntil == null) {
             throw new CustomException("请填写价格有效期限");
         }
-        List<String> activeOrderNos = productMapper.listActiveOrderNosByCode(code);
-        productMapper.markCustomerOrderItemsCompletedByCode(code, purchasePrice, salePrice);
+        List<String> selectedOrderNos = stringList(price.get("orderNos"));
+        List<String> activeOrderNos = selectedOrderNos.isEmpty() ? productMapper.listActiveOrderNosByCode(code) : selectedOrderNos;
+        if (activeOrderNos.isEmpty()) {
+            throw new CustomException("请先选择要采用价格的订单");
+        }
+        if (selectedOrderNos.isEmpty()) {
+            productMapper.markCustomerOrderItemsCompletedByCode(code, purchasePrice, salePrice);
+        } else {
+            productMapper.markCustomerOrderItemsCompletedByCodeAndOrders(code, selectedOrderNos, purchasePrice, salePrice);
+        }
         productMapper.updateInternalPricesByCode(code, purchasePrice, salePrice, priceValidUntil);
         productMapper.pushInternalOrderPrice(code, priceTrendEntry(purchasePrice, stringValue(price.get("supplierUsername"))));
         for (String orderNo : activeOrderNos) {
@@ -1638,6 +1693,20 @@ public class ProductServiceImpl implements ProductService {
 
     private String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private List<String> stringList(Object value) {
+        if (!(value instanceof Iterable)) {
+            return Collections.emptyList();
+        }
+        List<String> result = new ArrayList<>();
+        for (Object item : (Iterable<?>) value) {
+            String text = stringValue(item);
+            if (!empty(text)) {
+                result.add(text);
+            }
+        }
+        return result;
     }
 
     private List<FieldDef> templateFields(String name) {
