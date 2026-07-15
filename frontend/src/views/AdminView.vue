@@ -1224,6 +1224,7 @@ onMounted(async () => {
               <button v-if="state.tab === 'supplier'" @click="openModal('supplierProduct')">{{ '\u65b0\u589e\u4ea7\u54c1\u4fe1\u606f' }}</button>
               <button v-if="state.tab === 'supplier'" class="primary" @click="openAdminQuoteModal()">{{ '\u62a5\u4ef7' }}</button>
               <button v-if="canBatchDelete()" class="danger" @click="deleteSelectedRows">{{ state.tab === 'orders' ? '批量作废' : '批量删除' }}</button>
+              <button v-if="state.tab === 'internal'" @click="exportSelectedRows">导出选中数据</button>
               <button v-if="state.tab === 'internal'" class="primary" @click="openPriceTrendModal">查看价格趋势</button>
               <div v-if="state.tab === 'supplier'" class="menu-wrap">
                 <button @click="toggleActionMenu('download')">{{ '\u4e0b\u8f7d\u8868\u683c' }}</button>

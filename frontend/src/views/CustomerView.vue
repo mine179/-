@@ -170,6 +170,24 @@ function togglePageInternal(checked) {
   state.selectedInternal = Array.from(set)
 }
 
+function exportSelectedInternalRows() {
+  const selected = new Set(state.selectedInternal)
+  const rows = state.internalProducts.filter(row => selected.has(row.id))
+  if (!rows.length) {
+    toast('请先勾选要导出的主表产品')
+    return
+  }
+  exportRowsAsExcel(rows, columns.value, '主表-选中数据.xls')
+}
+
+function exportRowsAsExcel(rows, keys, filename) {
+  const escape = value => String(formatCell(value ?? '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const header = keys.map(key => `<th>${escape(columnLabel(key))}</th>`).join('')
+  const body = rows.map(row => `<tr>${keys.map(key => `<td>${escape(valueOf(row, key))}</td>`).join('')}</tr>`).join('')
+  const html = `<html><head><meta charset="UTF-8"></head><body><table><tr>${header}</tr>${body}</table></body></html>`
+  downloadBlob(new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' }), filename)
+}
+
 function openOrderDetail(row) {
   router.push({ name: 'customer-order-detail', params: { orderNo: valueOf(row, 'order_no') } })
 }
@@ -473,6 +491,7 @@ onMounted(async () => {
               <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'product'">新增订单</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'upload'">上传订单</button>
+              <button v-if="state.view === 'internal'" @click="exportSelectedInternalRows">导出选中数据</button>
               <button v-if="state.view === 'internal'" class="primary" @click="orderFromInternal">勾选下单</button>
             </div>
           </div>

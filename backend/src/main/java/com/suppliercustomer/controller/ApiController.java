@@ -311,6 +311,12 @@ public class ApiController {
         return Result.success(productService.listSupplierSubmissions(user.getUsername()));
     }
 
+    @GetMapping("/supplier/internal-products")
+    public Result supplierInternalProducts(@RequestHeader("Authorization") String authorization) {
+        userService.requireRole(authorization, "SUPPLIER");
+        return Result.success(productService.listInternalProducts());
+    }
+
     @PostMapping("/supplier/submissions")
     public Result addSupplierSubmission(@RequestHeader("Authorization") String authorization,
                                         @RequestBody Product product) {

@@ -14,20 +14,49 @@ const closeText = '\u5173\u95ed'
 const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
 const views = [
+  ['internal', '主表'],
   ['products', '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868']
 ]
 
+const supplierInternalHiddenColumns = [
+  'serial_no',
+  'serialNo',
+  'sale_price',
+  'salePrice',
+  'purchase_price',
+  'purchasePrice',
+  'price_valid_until',
+  'priceValidUntil',
+  'manual_price_1',
+  'manual_price_2',
+  'manual_price_3',
+  'manual_price_4',
+  'manual_price_5',
+  'order_price_1',
+  'order_price_2',
+  'order_price_3',
+  'order_price_4',
+  'order_price_5',
+  'master_product_id',
+  'masterProductId',
+  'created_at',
+  'createdAt',
+  'updated_at',
+  'updatedAt'
+]
 const supplierProductFields = productFields.filter(([key]) => key !== 'salePrice' && key !== 'priceValidUntil')
 const supplierProductCreateFields = productFields.filter(([key]) => key !== 'salePrice')
 const supplierProductDisplayFields = productFields.filter(([key]) => key !== 'salePrice')
 const quoteProductFields = supplierProductFields.filter(([key]) => key !== 'priceValidUntil')
 const productColumns = ['id', 'link_status', 'quote_status', ...supplierProductDisplayFields.map(([key]) => key), 'updatedAt']
+const internalColumns = ['id', ...productFields.map(([key]) => key), 'updatedAt']
 const quoteColumns = ['id', 'status', ...quoteProductFields.map(([key]) => key), 'updatedAt']
 const quoteItemColumns = ['brand', 'code', 'newCode', 'craftMaterial', 'specModel', 'commonModel', 'purchasePrice', 'priceValidUntil']
 
 const state = reactive({
   view: 'products',
   product: {},
+  internalProducts: [],
   products: [],
   quoteOrders: [],
   quoteItems: [],
@@ -55,8 +84,13 @@ const state = reactive({
 
 const pageSizeOptions = [1000, 2000, 3000, 5000]
 
-const sourceRows = computed(() => state.products)
-const baseColumns = computed(() => productColumns)
+const sourceRows = computed(() => state.view === 'internal' ? state.internalProducts : state.products)
+const baseColumns = computed(() => {
+  if (state.view === 'internal') {
+    return internalColumns.filter(key => !supplierInternalHiddenColumns.includes(key))
+  }
+  return productColumns
+})
 const columns = computed(() => {
   const saved = state.columnOrder[state.view] || []
   const known = saved.filter(key => baseColumns.value.includes(key))
@@ -84,10 +118,16 @@ function fieldInputType(fieldKey) {
 }
 
 async function load() {
-  state.products = await request.get('/supplier/submissions')
+  if (state.view === 'internal') {
+    state.internalProducts = await request.get('/supplier/internal-products')
+  } else {
+    state.products = await request.get('/supplier/submissions')
+  }
   if (state.page > pageTotal.value) state.page = pageTotal.value
-  await nextTick()
-  window.setTimeout(showQuoteReminder, 0)
+  if (state.view === 'products') {
+    await nextTick()
+    window.setTimeout(showQuoteReminder, 0)
+  }
 }
 
 function showQuoteReminder() {
@@ -95,7 +135,7 @@ function showQuoteReminder() {
   const count = state.products.filter(row => valueOf(row, 'quote_status') === 'NEED_QUOTE').length
   state.quoteReminderShown = true
   if (count > 0) {
-    window.alert(`\u60a8\u6709${count}\u4e2a\u4ea7\u54c1\u9700\u8981\u66f4\u65b0\u62a5\u4ef7`)
+    toast(`\u60a8\u6709${count}\u4e2a\u4ea7\u54c1\u9700\u8981\u66f4\u65b0\u62a5\u4ef7`)
   }
 }
 
@@ -104,6 +144,7 @@ async function switchView(view) {
   state.page = 1
   state.globalSearch = ''
   state.columnFilters = {}
+  state.selectedOrders = []
   closeFilterMenu()
   await load()
 }
@@ -121,18 +162,19 @@ async function downloadTemplate() {
   downloadBlob(response.data, '供应商产品上传模板.xlsx')
 }
 
-function selectedProductRows() {
+function selectedCurrentRows() {
   const selected = new Set(state.selectedOrders)
-  return state.products.filter(row => selected.has(orderNoOf(row)))
+  return sourceRows.value.filter(row => selected.has(orderNoOf(row)))
 }
 
 function exportSelectedRows() {
-  const rows = selectedProductRows()
+  const rows = selectedCurrentRows()
   if (!rows.length) {
     toast('\u8bf7\u5148\u52fe\u9009\u8981\u5bfc\u51fa\u7684\u6570\u636e')
     return
   }
-  exportRowsAsExcel(rows, columns.value, '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868-\u9009\u4e2d\u6570\u636e.xls')
+  const title = views.find(view => view[0] === state.view)?.[1] || state.view
+  exportRowsAsExcel(rows, columns.value, `${title}-选中数据.xls`)
 }
 
 function exportRowsAsExcel(rows, keys, filename) {
@@ -510,6 +552,7 @@ onMounted(async () => {
             <h2>{{ views.find(view => view[0] === state.view)?.[1] }}</h2>
             <div class="panel-actions">
               <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
+              <button v-if="state.view === 'internal'" @click="exportSelectedRows">导出选中数据</button>
               <div v-if="state.view === 'products'" class="menu-wrap">
                 <button @click="toggleActionMenu('download')">{{ '\u4e0b\u8f7d\u8868\u683c' }}</button>
                 <div v-if="state.actionMenu === 'download'" class="action-menu">
@@ -539,13 +582,13 @@ onMounted(async () => {
           <div class="table-wrap">
             <table>
               <colgroup>
-                <col v-if="state.view === 'products'" class="select-col">
+                <col v-if="state.view === 'products' || state.view === 'internal'" class="select-col">
                 <col v-for="key in columns" :key="key" :style="headerStyle(key)">
                 <col v-if="state.view === 'products'" class="action-col">
               </colgroup>
               <thead>
                 <tr>
-                  <th v-if="state.view === 'products'" class="check-cell">
+                  <th v-if="state.view === 'products' || state.view === 'internal'" class="check-cell">
                     <input type="checkbox" :checked="pageOrdersChecked" @change="togglePageOrders($event.target.checked)">
                   </th>
                   <th
@@ -598,7 +641,7 @@ onMounted(async () => {
               </thead>
               <tbody>
                 <tr v-for="row in pagedRows" :key="`${state.view}-${row.id}`">
-                  <td v-if="state.view === 'products'" class="check-cell">
+                  <td v-if="state.view === 'products' || state.view === 'internal'" class="check-cell">
                     <input type="checkbox" :checked="selectedOrderSet.has(orderNoOf(row))" @change="toggleOrder(orderNoOf(row), $event.target.checked)">
                   </td>
                   <td v-for="key in columns" :key="key">
@@ -614,7 +657,7 @@ onMounted(async () => {
 
           <div class="pager">
             <span>共 {{ filteredRows.length }} 条</span>
-            <span v-if="state.view === 'products'">已选 {{ state.selectedOrders.length }} 条</span>
+            <span v-if="state.view === 'products' || state.view === 'internal'">已选 {{ state.selectedOrders.length }} 条</span>
             <label>
               每页
               <select v-model.number="state.pageSize" @change="changePageSize">
