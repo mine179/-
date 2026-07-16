@@ -62,7 +62,10 @@ public class ProductServiceImpl implements ProductService {
             new FieldDef("\u4ef7\u683c\u6709\u6548\u671f\u9650", "price_valid_until", "date")
     );
     private static final List<FieldDef> SUPPLIER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "sale_price");
-    private static final List<FieldDef> CUSTOMER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "code", "new_code", "purchase_price");
+    private static final List<FieldDef> CUSTOMER_PRODUCT_FIELDS = withoutFields(PRODUCT_FIELDS, "purchase_price");
+    private static final List<FieldDef> CUSTOMER_ORDER_FIELDS = concat(CUSTOMER_PRODUCT_FIELDS, Collections.singletonList(
+            new FieldDef("备注", "order_remark")
+    ));
     private static final List<FieldDef> SUPPLIER_QUOTE_PRICE_FIELDS = Arrays.asList(
             new FieldDef("????", "code"),
             new FieldDef("????", "spec_model"),
@@ -425,11 +428,16 @@ public class ProductServiceImpl implements ProductService {
         return sendPricingAuditQuoteTasks(
                 stringList(request.get("codes")),
                 stringList(request.get("supplierUsernames")),
-                stringList(request.get("supplierTargets"))
+                stringList(request.get("supplierTargets")),
+                booleanValue(request.get("inquiryOnly"))
         );
     }
 
     private String sendPricingAuditQuoteTasks(List<String> codes, List<String> selectedSuppliers, List<String> selectedTargets) {
+        return sendPricingAuditQuoteTasks(codes, selectedSuppliers, selectedTargets, false);
+    }
+
+    private String sendPricingAuditQuoteTasks(List<String> codes, List<String> selectedSuppliers, List<String> selectedTargets, boolean inquiryOnly) {
         if (codes == null || codes.isEmpty()) {
             throw new CustomException("NO_SELECTED_ITEMS");
         }
@@ -442,8 +450,8 @@ public class ProductServiceImpl implements ProductService {
                 continue;
             }
             sent.add(code);
-            String pricingGroup = "AUDIT-" + code;
-            if (productMapper.countActiveCustomerOrderItemsByCode(code) <= 0) {
+            String pricingGroup = (inquiryOnly ? "INQUIRY-" : "AUDIT-") + code + "-" + UUID.randomUUID().toString().substring(0, 8);
+            if (!inquiryOnly && productMapper.countActiveCustomerOrderItemsByCode(code) <= 0) {
                 continue;
             }
             List<Product> suppliers = productMapper.findAllSupplierSubmissionsByCode(code);
@@ -504,14 +512,21 @@ public class ProductServiceImpl implements ProductService {
         BigDecimal purchasePrice = decimal(stringValue(price.get("purchasePrice")));
         BigDecimal salePrice = decimal(stringValue(price.get("salePrice")));
         LocalDate priceValidUntil = dateValue(stringValue(price.get("priceValidUntil")));
+        boolean inquiryOnly = booleanValue(price.get("inquiryOnly"));
         if (purchasePrice == null) {
             throw new CustomException("请先选择供应价");
         }
-        if (salePrice == null) {
+        if (!inquiryOnly && salePrice == null) {
             throw new CustomException("请填写销售价");
         }
         if (priceValidUntil == null) {
             throw new CustomException("请填写价格有效期限");
+        }
+        if (inquiryOnly) {
+            productMapper.updateInternalInquiryPriceByCode(code, purchasePrice, priceValidUntil);
+            productMapper.markInquiryQuotesUsedByCode(code);
+            productMapper.pushInternalOrderPrice(code, priceTrendEntry(purchasePrice, stringValue(price.get("supplierUsername"))));
+            return;
         }
         List<String> selectedOrderNos = stringList(price.get("orderNos"));
         List<String> activeOrderNos = selectedOrderNos.isEmpty() ? productMapper.listActiveOrderNosByCode(code) : selectedOrderNos;
@@ -825,7 +840,7 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Map<String, Object> addCustomerOrderFromInternal(String customerUsername, List<Long> internalProductIds) {
+    public Map<String, Object> addCustomerOrderFromInternal(String customerUsername, List<Long> internalProductIds, String orderRemark) {
         if (internalProductIds == null || internalProductIds.isEmpty()) {
             throw new CustomException("请先勾选主表产品");
         }
@@ -848,6 +863,8 @@ public class ProductServiceImpl implements ProductService {
             item.setStatus("SUBMITTED_ORDER");
             item.setMatched(!empty(internal.getCode()));
             item.setMasterProductId(internal.getId());
+            item.setMaterialLinkStatus(empty(internal.getCode()) ? "UNLINKED" : "LINKED");
+            item.setOrderRemark(orderRemark);
             productMapper.insertCustomerOrderItem(item);
             ensureCustomerProductFromInternal(customerUsername, internal);
             total++;
@@ -903,15 +920,55 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    public void updateCustomerOrderItemRemark(Long id, String orderRemark, String customerUsername) {
+        Product item = productMapper.findCustomerOrderItem(id);
+        ensureCustomerOrderItemAccess(item, customerUsername);
+        productMapper.updateCustomerOrderItemRemark(id, orderRemark);
+    }
+
+    @Override
+    public void linkCustomerOrderItem(Long id, Product product, String customerUsername) {
+        Product item = productMapper.findCustomerOrderItem(id);
+        ensureCustomerOrderItemAccess(item, customerUsername);
+        String code = product == null ? "" : product.getCode();
+        if (empty(code)) {
+            throw new CustomException("请填写物料编码");
+        }
+        Product internal = productMapper.findInternalProductByCode(code);
+        if (internal == null) {
+            throw new CustomException("主表没有该物料编码，暂时无法链接");
+        }
+        Product linked = copyProduct(item);
+        linked.setId(id);
+        linked.setCode(internal.getCode());
+        linked.setNewCode(empty(product.getNewCode()) ? internal.getNewCode() : product.getNewCode());
+        linked.setMasterProductId(internal.getId());
+        linked.setCustomerUsername(item.getCustomerUsername());
+        linked.setSpecModel(item.getSpecModel());
+        linked.setCommonModel(item.getCommonModel());
+        productMapper.linkCustomerOrderItem(linked);
+        productMapper.updateCustomerProductCodeByModels(linked);
+    }
+
+    private void ensureCustomerOrderItemAccess(Product item, String customerUsername) {
+        if (item == null) {
+            throw new CustomException("订单产品不存在");
+        }
+        if (!empty(customerUsername) && !customerUsername.equals(item.getCustomerUsername())) {
+            throw new CustomException("不能修改其他客户的订单产品");
+        }
+    }
+
+    @Override
     public ResponseEntity<byte[]> template() throws IOException {
-        return buildTemplate("customer-template.xlsx", CUSTOMER_PRODUCT_FIELDS);
+        return buildTemplate("customer-template.xlsx", CUSTOMER_ORDER_FIELDS);
     }
 
     @Override
     public Map<String, Object> upload(String customerUsername, MultipartFile file) throws IOException {
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
-        validateHeader(sheet, CUSTOMER_PRODUCT_FIELDS);
+        validateHeader(sheet, CUSTOMER_ORDER_FIELDS);
 
         String orderNo = nextOrderNo();
         CustomerOrder order = new CustomerOrder();
@@ -924,10 +981,10 @@ public class ProductServiceImpl implements ProductService {
         int unmatched = 0;
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
-            if (row == null || blankRow(row, CUSTOMER_PRODUCT_FIELDS.size())) {
+            if (row == null || blankRow(row, CUSTOMER_ORDER_FIELDS.size())) {
                 continue;
             }
-            Product product = readRow(row, CUSTOMER_PRODUCT_FIELDS);
+            Product product = readRow(row, CUSTOMER_ORDER_FIELDS);
             Product master = saveCustomerOrderItem(orderNo, customerUsername, product);
             if (master == null) {
                 product.setStatus("WAIT_CODE");
@@ -996,6 +1053,8 @@ public class ProductServiceImpl implements ProductService {
         if ("sale_price".equals(column)) product.setSalePrice(decimal(value));
         if ("purchase_price".equals(column)) product.setPurchasePrice(decimal(value));
         if ("price_valid_until".equals(column)) product.setPriceValidUntil(dateValue(value));
+        if ("order_remark".equals(column)) product.setOrderRemark(value);
+        if ("material_link_status".equals(column)) product.setMaterialLinkStatus(value);
     }
 
     private boolean linkedStatus(Product product) {
@@ -1156,8 +1215,8 @@ public class ProductServiceImpl implements ProductService {
             if (row == null || blankRow(row, fields.size())) {
                 continue;
             }
-            Product product = readRow(row, CUSTOMER_PRODUCT_FIELDS);
-            String customerUsername = cell(row.getCell(CUSTOMER_PRODUCT_FIELDS.size()));
+            Product product = readRow(row, CUSTOMER_ORDER_FIELDS);
+            String customerUsername = cell(row.getCell(CUSTOMER_ORDER_FIELDS.size()));
             if (empty(customerUsername)) {
                 throw new CustomException("第" + (i + 1) + " 行缺少客户账号");
             }
@@ -1190,13 +1249,21 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private Product saveCustomerOrderItem(String orderNo, String customerUsername, Product product) {
-        clearProtectedCodes(product);
         product.setOrderNo(orderNo);
         product.setCustomerUsername(customerUsername);
         product.setStatus("SUBMITTED_ORDER");
-        Product master = null;
-        product.setMatched(false);
-        product.setMasterProductId(null);
+        Product master = empty(product.getCode()) ? null : productMapper.findInternalProductByCode(product.getCode());
+        if (master != null) {
+            product.setCode(master.getCode());
+            product.setNewCode(empty(product.getNewCode()) ? master.getNewCode() : product.getNewCode());
+            product.setMatched(true);
+            product.setMasterProductId(master.getId());
+            product.setMaterialLinkStatus("LINKED");
+        } else {
+            product.setMatched(false);
+            product.setMasterProductId(null);
+            product.setMaterialLinkStatus("UNLINKED");
+        }
         productMapper.insertCustomerOrderItem(product);
         ensureCustomerProductFromSelf(customerUsername, product);
         return master;
@@ -1216,6 +1283,7 @@ public class ProductServiceImpl implements ProductService {
         libraryProduct.setStatus(empty(internal.getCode()) ? "WAIT_CODE" : "APPROVED");
         libraryProduct.setMatched(!empty(internal.getCode()));
         libraryProduct.setMasterProductId(internal.getId());
+        libraryProduct.setMaterialLinkStatus("LINKED");
         productMapper.insertCustomerProduct(libraryProduct);
     }
 
@@ -1229,11 +1297,10 @@ public class ProductServiceImpl implements ProductService {
         Product libraryProduct = copyProduct(product);
         libraryProduct.setOrderNo("");
         libraryProduct.setCustomerUsername(customerUsername);
-        libraryProduct.setCode("");
-        libraryProduct.setNewCode("");
-        libraryProduct.setMatched(false);
-        libraryProduct.setMasterProductId(null);
-        libraryProduct.setStatus("WAIT_CODE");
+        libraryProduct.setMatched(!empty(product.getCode()));
+        libraryProduct.setMasterProductId(product.getMasterProductId());
+        libraryProduct.setStatus(empty(product.getCode()) ? "WAIT_CODE" : "APPROVED");
+        libraryProduct.setMaterialLinkStatus(empty(product.getCode()) ? "UNLINKED" : "LINKED");
         productMapper.insertCustomerProduct(libraryProduct);
     }
 
@@ -1298,6 +1365,9 @@ public class ProductServiceImpl implements ProductService {
         target.setMasterProductId(source.getMasterProductId());
         target.setLinkedMasterProductId(source.getLinkedMasterProductId());
         target.setStatus(source.getStatus());
+        target.setPricingGroup(source.getPricingGroup());
+        target.setOrderRemark(source.getOrderRemark());
+        target.setMaterialLinkStatus(source.getMaterialLinkStatus());
         return target;
     }
 
@@ -1474,6 +1544,13 @@ public class ProductServiceImpl implements ProductService {
         return "是".equals(value) || "true".equalsIgnoreCase(value) || "1".equals(value);
     }
 
+    private Boolean booleanValue(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return value != null && booleanValue(String.valueOf(value));
+    }
+
     private Set<String> selectedQuoteGroups(List<Long> quoteIds) {
         Set<Long> selectedIds = new HashSet<>();
         if (quoteIds != null) {
@@ -1592,7 +1669,9 @@ public class ProductServiceImpl implements ProductService {
             target.put("price_valid_until", internal.getPriceValidUntil());
             boolean hasValidPrice = hasValidInternalPrice(internal, today);
             target.put("price_source_status", hasValidPrice ? "VALID_PRICE" : "NO_VALID_PRICE");
-            target.put("current_order_status", productMapper.countActiveCustomerOrderItemsByCode(internal.getCode()) > 0 ? "HAS_ORDER" : "NO_ORDER");
+            boolean hasOrder = productMapper.countActiveCustomerOrderItemsByCode(internal.getCode()) > 0;
+            boolean hasInquiry = !hasOrder && productMapper.countActiveInquiryQuotesByCode(internal.getCode()) > 0;
+            target.put("current_order_status", hasOrder ? "HAS_ORDER" : hasInquiry ? "INQUIRY_ONLY" : "NO_ORDER");
             target.put("valid_price", hasValidPrice ? internal.getPurchasePrice() : "");
             target.put("pricing_status", "WAIT_USE_PRICE");
 
@@ -1623,13 +1702,23 @@ public class ProductServiceImpl implements ProductService {
             String leftStatus = stringValue(left.get("current_order_status"));
             String rightStatus = stringValue(right.get("current_order_status"));
             if (!leftStatus.equals(rightStatus)) {
-                return "HAS_ORDER".equals(leftStatus) ? -1 : 1;
+                return Integer.valueOf(orderStatusRank(leftStatus)).compareTo(orderStatusRank(rightStatus));
             }
             Long leftId = longValue(left.get("id"));
             Long rightId = longValue(right.get("id"));
             return leftId.compareTo(rightId);
         });
         return result;
+    }
+
+    private int orderStatusRank(String status) {
+        if ("HAS_ORDER".equals(status)) {
+            return 0;
+        }
+        if ("INQUIRY_ONLY".equals(status)) {
+            return 1;
+        }
+        return 2;
     }
 
     private String groupPricingStatus(List<Map<String, Object>> rows) {
@@ -1813,7 +1902,7 @@ public class ProductServiceImpl implements ProductService {
         map.put("supplier", concat(SUPPLIER_PRODUCT_FIELDS, Arrays.asList(
                 new FieldDef("供应商账号", "supplier_username")
         )));
-        map.put("orderItems", concat(CUSTOMER_PRODUCT_FIELDS, Arrays.asList(
+        map.put("orderItems", concat(CUSTOMER_ORDER_FIELDS, Arrays.asList(
                 new FieldDef("客户账号", "customer_username"),
                 new FieldDef("是否匹配", "matched", "boolean")
         )));
@@ -1826,7 +1915,7 @@ public class ProductServiceImpl implements ProductService {
                 new FieldDef("客户账号", "customer_username"),
                 new FieldDef("状态", "status")
         )));
-        map.put("orders", concat(CUSTOMER_PRODUCT_FIELDS, Collections.singletonList(
+        map.put("orders", concat(CUSTOMER_ORDER_FIELDS, Collections.singletonList(
                 new FieldDef("客户账号", "customer_username")
         )));
         map.put("quotes", Arrays.asList(
@@ -1881,6 +1970,11 @@ public class ProductServiceImpl implements ProductService {
     private Product mapToProduct(Map<String, Object> data) {
         Product product = new Product();
         product.setCode(stringValue(data.get("code")));
+        product.setNewCode(stringValue(data.get("new_code")));
+        product.setSpecModel(stringValue(data.get("spec_model")));
+        product.setCommonModel(stringValue(data.get("common_model")));
+        product.setOrderRemark(stringValue(data.get("order_remark")));
+        product.setMaterialLinkStatus(stringValue(data.get("material_link_status")));
         return product;
     }
 

@@ -80,6 +80,13 @@ export const columnLabels = {
   valid_price: '有效期内价格'
 }
 
+Object.assign(columnLabels, {
+  orderRemark: '备注',
+  order_remark: '备注',
+  materialLinkStatus: '物料连接状态',
+  material_link_status: '物料连接状态'
+})
+
 export function columnLabel(key) {
   return columnLabels[key] || key
 }
@@ -110,10 +117,17 @@ const statusLabels = {
   NO_ORDER: '无订单'
 }
 
+const extraStatusLabels = {
+  INQUIRY_ONLY: '无订单单纯询价',
+  LINKED: '已链接',
+  UNLINKED: '无链接'
+}
+
 export function formatCell(value) {
   if (value === null || value === undefined) return ''
   if (typeof value === 'boolean') return value ? '是' : '否'
   if (typeof value !== 'string') return value
+  if (extraStatusLabels[value]) return extraStatusLabels[value]
   if (statusLabels[value]) return statusLabels[value]
 
   const isoDateTime = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/)

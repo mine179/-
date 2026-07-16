@@ -96,13 +96,17 @@ public interface ProductService {
 
     Map<String, Object> addCustomerOrder(String customerUsername, Product product);
 
-    Map<String, Object> addCustomerOrderFromInternal(String customerUsername, List<Long> internalProductIds);
+    Map<String, Object> addCustomerOrderFromInternal(String customerUsername, List<Long> internalProductIds, String orderRemark);
 
     void updateCustomerProduct(String customerUsername, Long id, Product product);
 
     void cancelCustomerOrder(String customerUsername, String orderNo);
 
     void cancelCustomerOrderItem(String customerUsername, Long id);
+
+    void updateCustomerOrderItemRemark(Long id, String orderRemark, String customerUsername);
+
+    void linkCustomerOrderItem(Long id, Product product, String customerUsername);
 
     ResponseEntity<byte[]> template() throws IOException;
 

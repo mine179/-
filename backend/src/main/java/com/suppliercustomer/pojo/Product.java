@@ -29,6 +29,8 @@ public class Product {
     private String status;
     private String orderNo;
     private String pricingGroup;
+    private String orderRemark;
+    private String materialLinkStatus;
     private Boolean matched;
     private Long masterProductId;
     private Long linkedMasterProductId;
@@ -83,6 +85,10 @@ public class Product {
     public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
     public String getPricingGroup() { return pricingGroup; }
     public void setPricingGroup(String pricingGroup) { this.pricingGroup = pricingGroup; }
+    public String getOrderRemark() { return orderRemark; }
+    public void setOrderRemark(String orderRemark) { this.orderRemark = orderRemark; }
+    public String getMaterialLinkStatus() { return materialLinkStatus; }
+    public void setMaterialLinkStatus(String materialLinkStatus) { this.materialLinkStatus = materialLinkStatus; }
     public Boolean getMatched() { return matched; }
     public void setMatched(Boolean matched) { this.matched = matched; }
     public Long getMasterProductId() { return masterProductId; }

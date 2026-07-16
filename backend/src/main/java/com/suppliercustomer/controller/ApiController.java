@@ -141,6 +141,24 @@ public class ApiController {
         return Result.success();
     }
 
+    @PutMapping("/admin/order-items/{id}/remark")
+    public Result adminUpdateOrderItemRemark(@RequestHeader("Authorization") String authorization,
+                                             @PathVariable Long id,
+                                             @RequestBody Product product) {
+        userService.requireRole(authorization, "ADMIN");
+        productService.updateCustomerOrderItemRemark(id, product.getOrderRemark(), null);
+        return Result.success();
+    }
+
+    @PutMapping("/admin/order-items/{id}/link-code")
+    public Result adminLinkOrderItemCode(@RequestHeader("Authorization") String authorization,
+                                         @PathVariable Long id,
+                                         @RequestBody Product product) {
+        userService.requireRole(authorization, "ADMIN");
+        productService.linkCustomerOrderItem(id, product, null);
+        return Result.success();
+    }
+
     @GetMapping("/admin/table/{name}/template")
     public ResponseEntity<byte[]> adminTableTemplate(@RequestHeader("Authorization") String authorization,
                                                      @PathVariable String name) throws IOException {
@@ -437,9 +455,19 @@ public class ApiController {
 
     @PostMapping("/customer/orders/from-internal")
     public Result addCustomerOrderFromInternal(@RequestHeader("Authorization") String authorization,
-                                               @RequestBody List<Long> internalProductIds) {
+                                               @RequestBody Map<String, Object> request) {
         LoginUser user = userService.requireRole(authorization, "CUSTOMER");
-        return Result.success(productService.addCustomerOrderFromInternal(user.getUsername(), internalProductIds));
+        Object idsValue = request.get("ids");
+        List<Long> ids = new java.util.ArrayList<>();
+        if (idsValue instanceof List) {
+            for (Object value : (List) idsValue) {
+                if (value != null) {
+                    ids.add(Long.valueOf(String.valueOf(value)));
+                }
+            }
+        }
+        String orderRemark = request.get("orderRemark") == null ? "" : String.valueOf(request.get("orderRemark"));
+        return Result.success(productService.addCustomerOrderFromInternal(user.getUsername(), ids, orderRemark));
     }
 
     @PutMapping("/customer/orders/{orderNo}/cancel")
@@ -464,6 +492,24 @@ public class ApiController {
                                           @PathVariable Long id) {
         LoginUser user = userService.requireRole(authorization, "CUSTOMER");
         productService.cancelCustomerOrderItem(user.getUsername(), id);
+        return Result.success();
+    }
+
+    @PutMapping("/customer/order-items/{id}/remark")
+    public Result customerUpdateOrderItemRemark(@RequestHeader("Authorization") String authorization,
+                                                @PathVariable Long id,
+                                                @RequestBody Product product) {
+        LoginUser user = userService.requireRole(authorization, "CUSTOMER");
+        productService.updateCustomerOrderItemRemark(id, product.getOrderRemark(), user.getUsername());
+        return Result.success();
+    }
+
+    @PutMapping("/customer/order-items/{id}/link-code")
+    public Result customerLinkOrderItemCode(@RequestHeader("Authorization") String authorization,
+                                            @PathVariable Long id,
+                                            @RequestBody Product product) {
+        LoginUser user = userService.requireRole(authorization, "CUSTOMER");
+        productService.linkCustomerOrderItem(id, product, user.getUsername());
         return Result.success();
     }
 

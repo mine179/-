@@ -144,6 +144,8 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
     customer_username VARCHAR(80) NOT NULL,
     matched BOOLEAN DEFAULT FALSE,
     master_product_id BIGINT,
+    order_remark VARCHAR(500),
+    material_link_status VARCHAR(30) DEFAULT 'UNLINKED',
     status VARCHAR(30) DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -151,6 +153,8 @@ CREATE TABLE IF NOT EXISTS customer_order_items (
 ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS status VARCHAR(30) DEFAULT 'ACTIVE';
 ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS pricing_group VARCHAR(80);
 ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS price_valid_until DATE;
+ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS order_remark VARCHAR(500);
+ALTER TABLE customer_order_items ADD COLUMN IF NOT EXISTS material_link_status VARCHAR(30) DEFAULT 'UNLINKED';
 
 CREATE TABLE IF NOT EXISTS customer_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -172,6 +176,7 @@ CREATE TABLE IF NOT EXISTS customer_products (
     customer_username VARCHAR(80) NOT NULL,
     matched BOOLEAN DEFAULT FALSE,
     master_product_id BIGINT,
+    material_link_status VARCHAR(30) DEFAULT 'UNLINKED',
     status VARCHAR(30) DEFAULT 'WAIT_CODE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -182,6 +187,10 @@ SET status='APPROVED',
     updated_at=CURRENT_TIMESTAMP
 WHERE status='ACTIVE';
 ALTER TABLE customer_products ADD COLUMN IF NOT EXISTS price_valid_until DATE;
+ALTER TABLE customer_products ADD COLUMN IF NOT EXISTS material_link_status VARCHAR(30) DEFAULT 'UNLINKED';
+UPDATE customer_products
+SET material_link_status='LINKED'
+WHERE code IS NOT NULL AND code!='';
 
 CREATE TABLE IF NOT EXISTS unmatched_customer_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

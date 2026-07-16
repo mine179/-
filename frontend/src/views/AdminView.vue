@@ -13,7 +13,7 @@ const message = ref('')
 const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
 const tabs = [
-  ['internal', '\u4e3b\u8868'],
+  ['internal', '我的资源'],
   ['supplier', '\u4f9b\u5e94\u5546\u4ea7\u54c1\u4ef7\u683c\u8868'],
   ['orders', '\u5ba2\u6237\u8ba2\u5355\u8868'],
   ['customerProducts', '\u5ba2\u6237\u4ea7\u54c1\u8868'],
@@ -22,9 +22,9 @@ const tabs = [
 ]
 
 const navTree = [
-  { tab: 'internal', children: ['supplier', 'pricingAudit'] },
-  { tab: 'orders' },
-  { tab: 'customerProducts' },
+  { tab: 'internal', children: ['pricingAudit'] },
+  { tab: 'supplier' },
+  { tab: 'orders', children: ['customerProducts'] },
   { tab: 'users' }
 ]
 
@@ -82,8 +82,8 @@ const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSn
 const tableColumns = {
   internal: ['id', ...productColumnKeys, 'updated_at'],
   supplier: ['id', 'link_status', 'quote_status', ...supplierProductColumnKeys, 'supplier_username', 'updated_at'],
-  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
-  customerProducts: ['id', 'status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
+  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', 'material_link_status', 'order_remark', ...productColumnKeys, 'updated_at'],
+  customerProducts: ['id', 'status', 'material_link_status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
   quotes: ['id', 'status', ...quoteProductColumnKeys, 'supplier_username', 'updated_at'],
   pricingAudit: [
     'id', 'current_order_status', 'price_source_status', 'code', 'new_code', 'brand', 'craft_material', 'spec_model',
@@ -108,8 +108,10 @@ const state = reactive({
   editRow: {},
   priceTrendRows: [],
   pricingQuote: {},
-  quoteSendConfirm: { codes: [], suppliers: [], selectedTargets: [] },
+  quoteSendConfirm: { codes: [], suppliers: [], selectedTargets: [], inquiryOnly: false },
   priceItem: {},
+  orderRemark: { id: null, orderRemark: '' },
+  orderLink: { id: null, code: '', newCode: '' },
   activeQuoteTitle: '',
   quoteItems: [],
   importFile: null,
@@ -197,7 +199,7 @@ async function refreshLinkCounts() {
     request.get('/admin/table/pricingAudit')
   ])
   state.linkCounts.supplier = supplierRows.filter(rowNeedsSupplierPrice).length
-  state.linkCounts.orders = orderRows.filter(rowNeedsQuote).length
+  state.linkCounts.orders = countActiveOrderNos(orderRows)
   state.linkCounts.customerProducts = unmatchedRows.filter(rowStillUnlinked).length
   state.linkCounts.pricingAudit = pricingRows.filter(rowNeedsPricing).length
 }
@@ -490,7 +492,8 @@ function openUseSupplierQuote(item) {
     code: valueOf(item, 'code'),
     options,
     salePrice: valueOf(item, 'sale_price') || '',
-    priceValidUntil: valueOf(item, 'price_valid_until')
+    priceValidUntil: valueOf(item, 'price_valid_until'),
+    inquiryOnly: valueOf(item, 'current_order_status') === 'INQUIRY_ONLY'
   }
   openModal('usePrice')
 }
@@ -501,8 +504,27 @@ async function useSupplierQuote(option) {
     toast('请先填写供应价')
     return
   }
-  if (!state.pricingQuote.salePrice) {
+  if (!state.pricingQuote.priceValidUntil && !option.priceValidUntil) {
+    toast('请先填写价格有效期限')
+    return
+  }
+  if (!state.pricingQuote.inquiryOnly && !state.pricingQuote.salePrice) {
     toast('请先填写销售价')
+    return
+  }
+  if (state.pricingQuote.inquiryOnly) {
+    await request.post('/admin/pricing-audit/use-price', {
+      code: state.pricingQuote.code,
+      purchasePrice: option.purchasePrice,
+      priceValidUntil: state.pricingQuote.priceValidUntil || option.priceValidUntil || null,
+      supplierUsername: option.supplierUsername,
+      inquiryOnly: true
+    })
+    state.pricingQuote = {}
+    closeModal()
+    await load()
+    await refreshLinkCounts()
+    toast('已采用询价价格，并同步到我的资源')
     return
   }
   const orders = await request.get(`/admin/pricing-audit/${encodeURIComponent(state.pricingQuote.code)}/orders`)
@@ -579,17 +601,49 @@ async function sendPricingAuditQuotes(row) {
   openModal('sendQuotes')
 }
 
+async function openInternalInquiry() {
+  const rows = selectedCurrentRows()
+  const codes = rows.map(row => valueOf(row, 'code')).filter(Boolean)
+  if (!codes.length) {
+    toast('请先勾选要询价的我的资源')
+    return
+  }
+  const suppliers = []
+  for (const code of Array.from(new Set(codes))) {
+    const rows = await request.get(`/admin/pricing-audit/${encodeURIComponent(code)}/suppliers`)
+    rows.forEach(item => {
+      suppliers.push({
+        code,
+        supplierUsername: valueOf(item, 'supplier_username')
+      })
+    })
+  }
+  if (!suppliers.length) {
+    toast('没有找到有该物料编码的供应商')
+    return
+  }
+  state.quoteSendConfirm = {
+    codes: Array.from(new Set(codes)),
+    suppliers,
+    selectedTargets: suppliers.map(item => `${item.code}|${item.supplierUsername}`),
+    inquiryOnly: true
+  }
+  openModal('sendQuotes')
+}
+
 async function confirmSendPricingAuditQuotes() {
   if (!state.quoteSendConfirm.selectedTargets.length) {
     toast('请至少选择一个供应商')
     return
   }
+  const inquiryOnly = Boolean(state.quoteSendConfirm.inquiryOnly)
   const result = await request.post('/admin/pricing-audit/send-quotes', {
     codes: state.quoteSendConfirm.codes,
-    supplierTargets: state.quoteSendConfirm.selectedTargets
+    supplierTargets: state.quoteSendConfirm.selectedTargets,
+    inquiryOnly
   })
-  state.quoteSendConfirm = { codes: [], suppliers: [], selectedTargets: [] }
-  state.selectedRows = state.selectedRows.filter(item => item.table !== 'pricingAudit')
+  state.quoteSendConfirm = { codes: [], suppliers: [], selectedTargets: [], inquiryOnly: false }
+  state.selectedRows = state.selectedRows.filter(item => item.table !== (inquiryOnly ? 'internal' : 'pricingAudit'))
   closeModal()
   await load()
   await refreshLinkCounts()
@@ -681,6 +735,49 @@ async function saveOrderItemPrice() {
   await load()
   await refreshLinkCounts()
   toast('价格已保存')
+}
+
+function openOrderRemark(row) {
+  state.orderRemark = {
+    id: row.id,
+    orderRemark: valueOf(row, 'order_remark') || valueOf(row, 'orderRemark') || ''
+  }
+  openModal('orderRemark')
+}
+
+async function saveOrderRemark() {
+  await request.put(`/admin/order-items/${state.orderRemark.id}/remark`, {
+    orderRemark: state.orderRemark.orderRemark || ''
+  })
+  state.orderRemark = { id: null, orderRemark: '' }
+  closeModal()
+  await load()
+  toast('备注已修改')
+}
+
+function openOrderLink(row) {
+  state.orderLink = {
+    id: row.id,
+    code: valueOf(row, 'code') || '',
+    newCode: valueOf(row, 'new_code') || valueOf(row, 'newCode') || ''
+  }
+  openModal('orderLink')
+}
+
+async function saveOrderLink() {
+  if (!state.orderLink.code) {
+    toast('请填写物料编码')
+    return
+  }
+  await request.put(`/admin/order-items/${state.orderLink.id}/link-code`, {
+    code: state.orderLink.code,
+    newCode: state.orderLink.newCode
+  })
+  state.orderLink = { id: null, code: '', newCode: '' }
+  closeModal()
+  await load()
+  await refreshLinkCounts()
+  toast('物料编码已链接')
 }
 
 async function cancelOrderItem(row) {
@@ -1072,6 +1169,18 @@ function rowNeedsQuote(row) {
   return Boolean(valueOf(row, 'code')) && !['CANCELLED', 'COMPLETED'].includes(status)
 }
 
+function countActiveOrderNos(rows) {
+  const set = new Set()
+  rows.forEach(row => {
+    const status = String(valueOf(row, 'status') || '').toUpperCase()
+    const orderNo = orderNoOf(row)
+    if (orderNo && status !== 'COMPLETED' && status !== 'CANCELLED') {
+      set.add(orderNo)
+    }
+  })
+  return set.size
+}
+
 function rowNeedsSupplierPrice(row) {
   const quoteStatus = String(valueOf(row, 'quote_status') || valueOf(row, 'quoteStatus') || '').toUpperCase()
   return quoteStatus === 'NEED_QUOTE' || String(valueOf(row, 'status') || '').toUpperCase() === 'WAIT_SUPPLIER_PRICE'
@@ -1102,18 +1211,21 @@ function toggleNavGroup(tab) {
 }
 
 function statusClass(row, key) {
-  if (!['status', 'link_status', 'quote_status', 'pricing_status', 'price_source_status', 'current_order_status'].includes(key)) return ''
+  if (!['status', 'link_status', 'quote_status', 'pricing_status', 'price_source_status', 'current_order_status', 'material_link_status'].includes(key)) return ''
   const status = key === 'pricing_status'
     ? String(valueOf(row, key) || '').toUpperCase()
-    : key === 'quote_status' || key === 'link_status' || key === 'price_source_status' || key === 'current_order_status'
+    : key === 'quote_status' || key === 'link_status' || key === 'price_source_status' || key === 'current_order_status' || key === 'material_link_status'
       ? String(valueOf(row, key) || '').toUpperCase()
       : orderStatusOf(row)
+  if (status === 'UNLINKED') return 'status-wait'
+  if (status === 'LINKED') return 'status-linked'
   if (status === 'CANCELLED') return 'status-cancelled'
   if (status === 'QUOTE_COMPLETED' || status === 'COMPLETED') return 'status-completed'
   if (status === 'WAIT_USE_PRICE') return 'status-submitted'
   if (status === 'USED_PRICE') return 'status-completed'
   if (status === 'NOT_USE_PRICE') return 'status-cancelled'
   if (status === 'VALID_PRICE' || status === 'NO_ORDER') return 'status-linked'
+  if (status === 'INQUIRY_ONLY') return 'status-submitted'
   if (status === 'HAS_ORDER') return 'status-submitted'
   if (status === 'NO_VALID_PRICE') return 'status-wait'
   if (status === 'SUBMITTED' || status === 'SUBMITTED_ORDER') return 'status-submitted'
@@ -1225,6 +1337,7 @@ onMounted(async () => {
               <button v-if="state.tab === 'supplier'" class="primary" @click="openAdminQuoteModal()">{{ '\u62a5\u4ef7' }}</button>
               <button v-if="canBatchDelete()" class="danger" @click="deleteSelectedRows">{{ state.tab === 'orders' ? '批量作废' : '批量删除' }}</button>
               <button v-if="state.tab === 'internal'" @click="exportSelectedRows">导出选中数据</button>
+              <button v-if="state.tab === 'internal'" class="primary" @click="openInternalInquiry">询价</button>
               <button v-if="state.tab === 'internal'" class="primary" @click="openPriceTrendModal">查看价格趋势</button>
               <div v-if="state.tab === 'supplier'" class="menu-wrap">
                 <button @click="toggleActionMenu('download')">{{ '\u4e0b\u8f7d\u8868\u683c' }}</button>
@@ -1325,6 +1438,8 @@ onMounted(async () => {
                     <button v-if="state.tab === 'users'" @click="openAccountEdit(row)">修改</button>
                     <button v-else-if="state.tab !== 'orders' && state.tab !== 'quotes' && state.tab !== 'pricingAudit'" @click="openEdit(row)">修改</button>
                     <button v-if="state.tab === 'orders'" class="primary" @click="openOrderItemPrice(row)">添加价格</button>
+                    <button v-if="state.tab === 'orders'" @click="openOrderRemark(row)">修改备注</button>
+                    <button v-if="state.tab === 'orders'" @click="openOrderLink(row)">链接物料编码</button>
                     <button v-if="state.tab === 'quotes'" class="primary" @click="openAdminQuoteModal(row)">报价</button>
                     <button v-if="state.tab === 'supplier'" class="primary" @click="openAdminQuoteModal(row)">{{ '\u62a5\u4ef7' }}</button>
                     <button v-if="state.tab === 'pricingAudit' && valueOf(row, 'current_order_status') === 'HAS_ORDER'" class="primary" @click="sendPricingAuditQuotes(row)">{{ '\u53d1\u9001\u62a5\u4ef7' }}</button>
@@ -1371,6 +1486,8 @@ onMounted(async () => {
           <h3 v-if="state.modal === 'usePrice'">{{ '\u91c7\u7528\u4ef7\u683c' }}</h3>
           <h3 v-if="state.modal === 'usePriceOrders'">确认采用价格范围</h3>
           <h3 v-if="state.modal === 'orderItemPrice'">添加价格</h3>
+          <h3 v-if="state.modal === 'orderRemark'">修改备注</h3>
+          <h3 v-if="state.modal === 'orderLink'">链接物料编码</h3>
           <h3 v-if="state.modal === 'priceTrend'">{{ '\u4ef7\u683c\u8d8b\u52bf' }}</h3>
           <h3 v-if="state.modal === 'quoteImport'">{{ '\u5bfc\u5165\u8868\u683c\u586b\u4ef7' }}</h3>
           <h3 v-if="state.modal === 'import'">{{ importButtonText() }}</h3>
@@ -1474,7 +1591,7 @@ onMounted(async () => {
 
         <div v-if="state.modal === 'usePrice'" class="modal-body">
           <div class="form-grid">
-            <input v-model="state.pricingQuote.salePrice" placeholder="销售价">
+            <input v-if="!state.pricingQuote.inquiryOnly" v-model="state.pricingQuote.salePrice" placeholder="销售价">
             <input v-model="state.pricingQuote.priceValidUntil" type="date" placeholder="价格有效期限">
           </div>
           <div class="table-wrap compact price-option-table">
@@ -1561,6 +1678,17 @@ onMounted(async () => {
           <input v-model="state.priceItem.purchasePrice" :placeholder="'\u4f9b\u5e94\u4ef7'">
           <input v-model="state.priceItem.salePrice" :placeholder="'\u9500\u552e\u4ef7'">
           <button class="primary" @click="saveOrderItemPrice">{{ '\u4fdd\u5b58\u4ef7\u683c' }}</button>
+        </div>
+
+        <div v-if="state.modal === 'orderRemark'" class="modal-body form-grid">
+          <textarea v-model="state.orderRemark.orderRemark" placeholder="备注"></textarea>
+          <button class="primary" @click="saveOrderRemark">保存备注</button>
+        </div>
+
+        <div v-if="state.modal === 'orderLink'" class="modal-body form-grid">
+          <input v-model="state.orderLink.code" placeholder="物料编码">
+          <input v-model="state.orderLink.newCode" placeholder="新编码">
+          <button class="primary" @click="saveOrderLink">确认链接</button>
         </div>
 
 

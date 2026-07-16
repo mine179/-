@@ -119,6 +119,8 @@ public interface ProductMapper {
 
     List<Map<String, Object>> listActiveOrdersByCode(String code);
 
+    int countActiveInquiryQuotesByCode(String code);
+
     void markCustomerOrderItemsCompletedByCodeAndOrders(@Param("code") String code,
                                                         @Param("orderNos") List<String> orderNos,
                                                         @Param("purchasePrice") java.math.BigDecimal purchasePrice,
@@ -170,6 +172,12 @@ public interface ProductMapper {
 
     void linkCustomerOrderItemsByModels(Product product);
 
+    void linkCustomerOrderItem(Product product);
+
+    void updateCustomerProductCodeByModels(Product product);
+
+    void updateCustomerOrderItemRemark(@Param("id") Long id, @Param("orderRemark") String orderRemark);
+
     void supplierUpdateQuote(SupplierQuote quote);
 
     int supplierUpdateQuoteByOrderAndCode(SupplierQuote quote);
@@ -197,6 +205,12 @@ public interface ProductMapper {
                                     @Param("purchasePrice") java.math.BigDecimal purchasePrice,
                                     @Param("salePrice") java.math.BigDecimal salePrice,
                                     @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
+
+    void updateInternalInquiryPriceByCode(@Param("code") String code,
+                                          @Param("purchasePrice") java.math.BigDecimal purchasePrice,
+                                          @Param("priceValidUntil") java.time.LocalDate priceValidUntil);
+
+    void markInquiryQuotesUsedByCode(@Param("code") String code);
 
     void updateInternalSupplierPriceIfCheaper(@Param("code") String code,
                                               @Param("purchasePrice") java.math.BigDecimal purchasePrice,

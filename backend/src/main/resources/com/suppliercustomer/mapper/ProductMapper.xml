@@ -71,13 +71,13 @@
     </insert>
 
     <insert id="insertCustomerOrderItem" parameterType="com.suppliercustomer.pojo.Product">
-        insert into customer_order_items(<include refid="productColumns"/>,order_no,customer_username,matched,master_product_id,status,pricing_group)
-        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{matched},#{masterProductId},#{status},#{pricingGroup})
+        insert into customer_order_items(<include refid="productColumns"/>,order_no,customer_username,matched,master_product_id,status,pricing_group,order_remark,material_link_status)
+        values(<include refid="productValues"/>,#{orderNo},#{customerUsername},#{matched},#{masterProductId},#{status},#{pricingGroup},#{orderRemark},#{materialLinkStatus})
     </insert>
 
     <insert id="insertCustomerProduct" parameterType="com.suppliercustomer.pojo.Product">
-        insert into customer_products(<include refid="productColumns"/>,customer_username,matched,master_product_id,status)
-        values(<include refid="productValues"/>,#{customerUsername},#{matched},#{masterProductId},#{status})
+        insert into customer_products(<include refid="productColumns"/>,customer_username,matched,master_product_id,status,material_link_status)
+        values(<include refid="productValues"/>,#{customerUsername},#{matched},#{masterProductId},#{status},#{materialLinkStatus})
     </insert>
 
     <insert id="insertUnmatchedCustomerItem" parameterType="com.suppliercustomer.pojo.Product">
@@ -206,7 +206,7 @@
                     where q.supplier_username=s.supplier_username
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
-               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
+               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status
         from supplier_submissions s
         order by case when exists (
                     select 1 from supplier_quotes q
@@ -226,7 +226,7 @@
                     where q.supplier_username=s.supplier_username
                       and q.code=s.code
                       and q.status='WAIT_SUPPLIER_PRICE'
-               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status,
+               ) then 'NEED_QUOTE' else 'QUOTED' end quote_status
         from supplier_submissions s
         where s.supplier_username=#{supplierUsername}
         order by case when exists (
@@ -459,6 +459,13 @@
         order by i.order_no
     </select>
 
+    <select id="countActiveInquiryQuotesByCode" resultType="int">
+        select count(*) from supplier_quotes
+        where code=#{code}
+          and pricing_group like 'INQUIRY-%'
+          and ifnull(pricing_status, 'WAIT_USE_PRICE')='WAIT_USE_PRICE'
+    </select>
+
     <update id="cancelCustomerOrder">
         update customer_orders set status='CANCELLED', updated_at=current_timestamp where order_no=#{orderNo}
     </update>
@@ -613,7 +620,18 @@
 
     <update id="approveCustomerProduct" parameterType="com.suppliercustomer.pojo.Product">
         update customer_products
-        set code=#{code},new_code=#{newCode},master_product_id=#{masterProductId},matched=true,status='APPROVED',updated_at=current_timestamp
+        set code=#{code},new_code=#{newCode},master_product_id=#{masterProductId},matched=true,status='APPROVED',material_link_status='LINKED',updated_at=current_timestamp
+        where id=#{id}
+    </update>
+
+    <update id="linkCustomerOrderItem" parameterType="com.suppliercustomer.pojo.Product">
+        update customer_order_items
+        set code=#{code},
+            new_code=#{newCode},
+            master_product_id=#{masterProductId},
+            matched=true,
+            material_link_status='LINKED',
+            updated_at=current_timestamp
         where id=#{id}
     </update>
 
@@ -623,12 +641,33 @@
             new_code=#{newCode},
             master_product_id=#{masterProductId},
             matched=true,
+            material_link_status='LINKED',
             status='SUBMITTED_ORDER',
             updated_at=current_timestamp
         where customer_username=#{customerUsername}
           and ifnull(spec_model, '')=ifnull(#{specModel}, '')
           and ifnull(common_model, '')=ifnull(#{commonModel}, '')
           and (matched=false or ifnull(code, '')='')
+    </update>
+
+    <update id="updateCustomerProductCodeByModels" parameterType="com.suppliercustomer.pojo.Product">
+        update customer_products
+        set code=#{code},
+            new_code=#{newCode},
+            master_product_id=#{masterProductId},
+            matched=true,
+            status='APPROVED',
+            material_link_status='LINKED',
+            updated_at=current_timestamp
+        where customer_username=#{customerUsername}
+          and ifnull(spec_model, '')=ifnull(#{specModel}, '')
+          and ifnull(common_model, '')=ifnull(#{commonModel}, '')
+    </update>
+
+    <update id="updateCustomerOrderItemRemark">
+        update customer_order_items
+        set order_remark=#{orderRemark}, updated_at=current_timestamp
+        where id=#{id}
     </update>
 
     <update id="supplierUpdateQuote" parameterType="com.suppliercustomer.pojo.SupplierQuote">
@@ -719,6 +758,23 @@
             price_valid_until=#{priceValidUntil},
             updated_at=current_timestamp
         where code=#{code}
+    </update>
+
+    <update id="updateInternalInquiryPriceByCode">
+        update internal_products
+        set purchase_price=#{purchasePrice},
+            price_valid_until=#{priceValidUntil},
+            updated_at=current_timestamp
+        where code=#{code}
+    </update>
+
+    <update id="markInquiryQuotesUsedByCode">
+        update supplier_quotes
+        set pricing_status='USED_PRICE',
+            updated_at=current_timestamp
+        where code=#{code}
+          and pricing_group like 'INQUIRY-%'
+          and ifnull(pricing_status, 'WAIT_USE_PRICE')='WAIT_USE_PRICE'
     </update>
 
     <update id="updateInternalSupplierPriceIfCheaper">

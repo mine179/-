@@ -11,7 +11,7 @@ const user = JSON.parse(localStorage.getItem('user') || '{}')
 const message = ref('')
 const saveTableStyleText = '\u4fdd\u5b58\u8868\u683c\u6837\u5f0f'
 
-const hiddenColumns = ['serial_no', 'serialNo', 'code', 'newCode', 'new_code', 'purchase_price', 'purchasePrice', 'customer_username', 'customerUsername']
+const hiddenColumns = ['serial_no', 'serialNo', 'purchase_price', 'purchasePrice', 'customer_username', 'customerUsername']
 const internalHiddenColumns = [
   ...hiddenColumns,
   'master_product_id',
@@ -23,7 +23,8 @@ const internalHiddenColumns = [
   'updated_at',
   'updatedAt'
 ]
-const customerProductFields = productFields.filter(([key]) => !['code', 'newCode', 'purchasePrice'].includes(key))
+const customerProductFields = productFields.filter(([key]) => !['purchasePrice'].includes(key))
+const customerOrderFields = [...customerProductFields, ['orderRemark', '备注']]
 const productColumnKeys = productFields.map(([key]) => camelToSnake(key))
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
 
@@ -33,9 +34,14 @@ const views = [
   ['products', '客户产品表']
 ]
 
+const navTree = [
+  { view: 'internal' },
+  { view: 'orders', children: ['products'] }
+]
+
 const tableColumns = {
-  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', ...productColumnKeys, 'updated_at'],
-  products: ['id', 'status', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
+  orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', 'material_link_status', 'order_remark', ...productColumnKeys, 'updated_at'],
+  products: ['id', 'status', 'material_link_status', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
   internal: ['id', ...productColumnKeys, 'updated_at']
 }
 
@@ -47,6 +53,9 @@ const state = reactive({
   selectedInternal: [],
   file: null,
   product: {},
+  orderRemark: { id: null, orderRemark: '' },
+  orderLink: { id: null, code: '', newCode: '' },
+  internalOrderRemark: '',
   passwordForm: { password: '', confirmPassword: '' },
   modal: '',
   page: 1,
@@ -59,7 +68,8 @@ const state = reactive({
   columnOrder: {},
   columnWidths: {},
   dragColumn: '',
-  sidebarCollapsed: false
+  sidebarCollapsed: false,
+  navOpen: { orders: false }
 })
 
 const pageSizeOptions = [1000, 2000, 3000, 5000]
@@ -89,6 +99,7 @@ const selectedInternalSet = computed(() => new Set(state.selectedInternal))
 const pageInternalIds = computed(() => state.view === 'internal' ? pagedRows.value.map(row => row.id).filter(Boolean) : [])
 const pageInternalChecked = computed(() => pageInternalIds.value.length > 0 && pageInternalIds.value.every(id => selectedInternalSet.value.has(id)))
 const dataColumnWidths = computed(() => defaultColumnWidths(columns.value))
+const activeOrderCount = computed(() => countActiveOrderNos(state.orders))
 
 function toast(text) {
   message.value = text
@@ -143,14 +154,23 @@ async function addOrder() {
 }
 
 
-async function orderFromInternal() {
+function openInternalOrderModal() {
   if (!state.selectedInternal.length) {
     toast('\u8bf7\u5148\u52fe\u9009\u4e3b\u8868\u4ea7\u54c1')
     return
   }
-  if (!window.confirm(`\u786e\u5b9a\u5c06\u5df2\u9009\u7684 ${state.selectedInternal.length} \u4e2a\u4e3b\u8868\u4ea7\u54c1\u4e0b\u5355\u5417\uff1f`)) return
-  const result = await request.post('/customer/orders/from-internal', state.selectedInternal)
+  state.internalOrderRemark = ''
+  state.modal = 'internalOrder'
+}
+
+async function orderFromInternal() {
+  const result = await request.post('/customer/orders/from-internal', {
+    ids: state.selectedInternal,
+    orderRemark: state.internalOrderRemark
+  })
   state.selectedInternal = []
+  state.internalOrderRemark = ''
+  state.modal = ''
   await switchView('orders')
   toast(`\u4e0b\u5355\u5b8c\u6210\uff1a${result.orderNo}\uff0c\u5171 ${result.total} \u6761\u4ea7\u54c1`)
 }
@@ -210,6 +230,48 @@ async function cancelOrderItem(row) {
   await request.put(`/customer/order-items/${row.id}/cancel`)
   await loadCurrent()
   toast('\u4ea7\u54c1\u5df2\u4f5c\u5e9f')
+}
+
+function openOrderRemark(row) {
+  state.orderRemark = {
+    id: row.id,
+    orderRemark: valueOf(row, 'order_remark') || valueOf(row, 'orderRemark') || ''
+  }
+  state.modal = 'orderRemark'
+}
+
+async function saveOrderRemark() {
+  await request.put(`/customer/order-items/${state.orderRemark.id}/remark`, {
+    orderRemark: state.orderRemark.orderRemark || ''
+  })
+  state.orderRemark = { id: null, orderRemark: '' }
+  state.modal = ''
+  await loadCurrent()
+  toast('备注已修改')
+}
+
+function openOrderLink(row) {
+  state.orderLink = {
+    id: row.id,
+    code: valueOf(row, 'code') || '',
+    newCode: valueOf(row, 'new_code') || valueOf(row, 'newCode') || ''
+  }
+  state.modal = 'orderLink'
+}
+
+async function saveOrderLink() {
+  if (!state.orderLink.code) {
+    toast('请填写物料编码')
+    return
+  }
+  await request.put(`/customer/order-items/${state.orderLink.id}/link-code`, {
+    code: state.orderLink.code,
+    newCode: state.orderLink.newCode
+  })
+  state.orderLink = { id: null, code: '', newCode: '' }
+  state.modal = ''
+  await loadCurrent()
+  toast('物料编码已链接')
 }
 
 
@@ -278,8 +340,10 @@ function displayOrderCell(row, key, rowIndex) {
 }
 
 function statusClass(row, key) {
-  if (key !== 'status') return ''
-  const status = orderStatusOf(row)
+  if (!['status', 'material_link_status'].includes(key)) return ''
+  const status = key === 'material_link_status' ? String(valueOf(row, key) || '').toUpperCase() : orderStatusOf(row)
+  if (status === 'UNLINKED') return 'status-wait'
+  if (status === 'LINKED') return 'status-linked'
   if (status === 'CANCELLED') return 'status-cancelled'
   if (status === 'QUOTE_COMPLETED' || status === 'COMPLETED') return 'status-completed'
   if (status === 'SUBMITTED' || status === 'SUBMITTED_ORDER') return 'status-submitted'
@@ -425,6 +489,34 @@ function changePageSize() {
   state.page = 1
 }
 
+function viewLabel(view) {
+  return views.find(item => item[0] === view)?.[1] || view
+}
+
+function navNodeActive(node) {
+  return state.view === node.view || Boolean(node.children?.includes(state.view))
+}
+
+function toggleNavGroup(view) {
+  state.navOpen[view] = !state.navOpen[view]
+}
+
+function tabLinkCount(view) {
+  return view === 'orders' ? activeOrderCount.value : 0
+}
+
+function countActiveOrderNos(rows) {
+  const set = new Set()
+  rows.forEach(row => {
+    const status = String(valueOf(row, 'status') || '').toUpperCase()
+    const orderNo = orderNoOf(row)
+    if (orderNo && status !== 'COMPLETED' && status !== 'CANCELLED') {
+      set.add(orderNo)
+    }
+  })
+  return set.size
+}
+
 function prevPage() {
   state.page = Math.max(1, state.page - 1)
 }
@@ -478,21 +570,35 @@ onMounted(async () => {
 
     <section class="dashboard" :class="{ collapsed: state.sidebarCollapsed }">
       <aside v-if="!state.sidebarCollapsed" class="side">
-        <button v-for="view in views" :key="view[0]" :class="{ active: state.view === view[0] }" @click="switchView(view[0])">
-          <span>{{ view[1] }}</span>
-        </button>
+        <div v-for="node in navTree" :key="node.view" class="tree-group">
+          <div class="tree-row">
+            <button class="tree-main" :class="{ active: state.view === node.view, 'child-active': navNodeActive(node) && state.view !== node.view }" @click="switchView(node.view)">
+              <span>{{ viewLabel(node.view) }}</span>
+              <em v-if="tabLinkCount(node.view)">{{ tabLinkCount(node.view) }}</em>
+            </button>
+            <button v-if="node.children?.length" class="tree-toggle" @click.stop="toggleNavGroup(node.view)">
+              {{ state.navOpen[node.view] ? '▾' : '▸' }}
+            </button>
+          </div>
+          <div v-if="node.children?.length && state.navOpen[node.view]" class="tree-children">
+            <button v-for="child in node.children" :key="child" class="tree-child" :class="{ active: state.view === child }" @click="switchView(child)">
+              <span>{{ viewLabel(child) }}</span>
+              <em v-if="tabLinkCount(child)">{{ tabLinkCount(child) }}</em>
+            </button>
+          </div>
+        </div>
       </aside>
 
       <div class="content">
         <section class="panel">
           <div class="panel-title-row">
-            <h2>{{ views.find(view => view[0] === state.view)?.[1] }}</h2>
+            <h2>{{ viewLabel(state.view) }}</h2>
             <div class="panel-actions">
               <button @click="saveTableStyle">{{ saveTableStyleText }}</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'product'">新增订单</button>
               <button v-if="state.view === 'orders'" @click="state.modal = 'upload'">上传订单</button>
               <button v-if="state.view === 'internal'" @click="exportSelectedInternalRows">导出选中数据</button>
-              <button v-if="state.view === 'internal'" class="primary" @click="orderFromInternal">勾选下单</button>
+              <button v-if="state.view === 'internal'" class="primary" @click="openInternalOrderModal">勾选下单</button>
             </div>
           </div>
 
@@ -571,6 +677,8 @@ onMounted(async () => {
                     <span :class="statusClass(row, key)">{{ displayOrderCell(row, key, rowIndex) }}</span>
                   </td>
                   <td v-if="state.view !== 'internal'" class="row-actions action-cell">
+                    <button v-if="state.view === 'orders'" @click="openOrderRemark(row)">修改备注</button>
+                    <button v-if="state.view === 'orders'" @click="openOrderLink(row)">链接物料编码</button>
                     <button v-if="state.view === 'orders'" class="danger" :disabled="!orderCanCancel(row)" @click="cancelOrderItem(row)">产品作废</button>
                     <button v-if="state.view === 'products'" @click="openProductEdit(row)">修改名称</button>
                   </td>
@@ -601,7 +709,7 @@ onMounted(async () => {
       <section class="modal">
         <header class="modal-head"><h3>新增订单</h3><button @click="state.modal = ''">关闭</button></header>
         <div class="modal-body product-form">
-          <input v-for="field in customerProductFields" :key="field[0]" v-model="state.product[field[0]]" :placeholder="field[1]">
+          <input v-for="field in customerOrderFields" :key="field[0]" v-model="state.product[field[0]]" :placeholder="field[1]">
           <button class="primary" @click="addOrder">提交订单</button>
         </div>
       </section>
@@ -614,6 +722,37 @@ onMounted(async () => {
           <button @click="downloadTemplate">下载 Excel 模板</button>
           <input type="file" accept=".xlsx" @change="state.file = $event.target.files[0]">
           <button class="primary" @click="uploadFile">上传并生成订单</button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="state.modal === 'internalOrder'" class="modal-mask" @click.self="state.modal = ''">
+      <section class="modal">
+        <header class="modal-head"><h3>主表下单</h3><button @click="state.modal = ''">关闭</button></header>
+        <div class="modal-body form-grid">
+          <textarea v-model="state.internalOrderRemark" placeholder="备注"></textarea>
+          <button class="primary" @click="orderFromInternal">确认下单</button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="state.modal === 'orderRemark'" class="modal-mask" @click.self="state.modal = ''">
+      <section class="modal">
+        <header class="modal-head"><h3>修改备注</h3><button @click="state.modal = ''">关闭</button></header>
+        <div class="modal-body form-grid">
+          <textarea v-model="state.orderRemark.orderRemark" placeholder="备注"></textarea>
+          <button class="primary" @click="saveOrderRemark">保存备注</button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="state.modal === 'orderLink'" class="modal-mask" @click.self="state.modal = ''">
+      <section class="modal">
+        <header class="modal-head"><h3>链接物料编码</h3><button @click="state.modal = ''">关闭</button></header>
+        <div class="modal-body form-grid">
+          <input v-model="state.orderLink.code" placeholder="物料编码">
+          <input v-model="state.orderLink.newCode" placeholder="新编码">
+          <button class="primary" @click="saveOrderLink">确认链接</button>
         </div>
       </section>
     </div>
