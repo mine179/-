@@ -56,7 +56,12 @@ public interface ProductMapper {
 
     Product findInternalProductByCode(String code);
 
+    Product findInternalProductByIdentity(@Param("brand") String brand,
+                                          @Param("specModel") String specModel,
+                                          @Param("commonModel") String commonModel);
+
     Product findSupplierSubmissionBySpecAndSupplier(@Param("specModel") String specModel,
+                                                    @Param("commonModel") String commonModel,
                                                     @Param("supplierUsername") String supplierUsername);
 
     Product findSupplierSubmissionBySupplierAndCode(@Param("supplierUsername") String supplierUsername,
@@ -112,6 +117,8 @@ public interface ProductMapper {
     List<Product> listCustomerProducts(String customerUsername);
 
     List<Product> listInternalProducts();
+
+    void refreshInternalLinkCounts();
 
     int countActiveCustomerOrderItemsByCode(String code);
 

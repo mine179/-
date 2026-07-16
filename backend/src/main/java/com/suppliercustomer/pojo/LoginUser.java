@@ -9,6 +9,8 @@ public class LoginUser {
     private String salt;
     private String role;
     private String permissions;
+    private String supplierLevel;
+    private String customerLevel;
     private Boolean enabled;
     private String token;
     private LocalDateTime createdAt;
@@ -60,6 +62,22 @@ public class LoginUser {
 
     public void setPermissions(String permissions) {
         this.permissions = permissions;
+    }
+
+    public String getSupplierLevel() {
+        return supplierLevel;
+    }
+
+    public void setSupplierLevel(String supplierLevel) {
+        this.supplierLevel = supplierLevel;
+    }
+
+    public String getCustomerLevel() {
+        return customerLevel;
+    }
+
+    public void setCustomerLevel(String customerLevel) {
+        this.customerLevel = customerLevel;
     }
 
     public Boolean getEnabled() {

@@ -84,7 +84,13 @@ Object.assign(columnLabels, {
   orderRemark: '备注',
   order_remark: '备注',
   materialLinkStatus: '物料连接状态',
-  material_link_status: '物料连接状态'
+  material_link_status: '物料连接状态',
+  customer_link_count: '客户链接数量',
+  supplier_link_count: '供应商链接数量',
+  supplierLevel: '供应商等级',
+  supplier_level: '供应商等级',
+  customerLevel: '客户等级',
+  customer_level: '客户等级'
 })
 
 export function columnLabel(key) {

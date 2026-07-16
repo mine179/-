@@ -17,6 +17,20 @@
         select * from ${tableName} order by id asc
     </select>
 
+    <update id="refreshInternalLinkCounts">
+        update internal_products i
+        set customer_link_count=(
+                select count(distinct c.customer_username)
+                from customer_products c
+                where c.code=i.code and c.code is not null and c.code!=''
+            ),
+            supplier_link_count=(
+                select count(distinct s.supplier_username)
+                from supplier_submissions s
+                where s.code=i.code and s.code is not null and s.code!=''
+            )
+    </update>
+
     <update id="updateTableRow">
         update ${tableName}
         <set>
@@ -126,9 +140,19 @@
         select * from internal_products where code=#{code} order by id limit 1
     </select>
 
+    <select id="findInternalProductByIdentity" resultType="com.suppliercustomer.pojo.Product">
+        select * from internal_products
+        where ifnull(brand, '')=ifnull(#{brand}, '')
+          and ifnull(spec_model, '')=ifnull(#{specModel}, '')
+          and ifnull(common_model, '')=ifnull(#{commonModel}, '')
+        order by id limit 1
+    </select>
+
     <select id="findSupplierSubmissionBySpecAndSupplier" resultType="com.suppliercustomer.pojo.Product">
         select * from supplier_submissions
-        where ifnull(spec_model, '')=#{specModel} and supplier_username=#{supplierUsername}
+        where ifnull(spec_model, '')=ifnull(#{specModel}, '')
+          and ifnull(common_model, '')=ifnull(#{commonModel}, '')
+          and supplier_username=#{supplierUsername}
         order by id
         limit 1
     </select>

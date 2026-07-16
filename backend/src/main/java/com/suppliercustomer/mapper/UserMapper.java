@@ -17,13 +17,13 @@ public interface UserMapper {
     @Select("select * from users where id=#{id}")
     LoginUser findById(Long id);
 
-    @Select("select id,username,role,permissions,enabled,created_at,updated_at from users order by id desc")
+    @Select("select id,username,role,permissions,supplier_level,customer_level,enabled,created_at,updated_at from users order by id desc")
     List<LoginUser> list();
 
-    @Insert("insert into users(username,password,salt,role,permissions,enabled) values(#{username},#{password},#{salt},#{role},#{permissions},#{enabled})")
+    @Insert("insert into users(username,password,salt,role,permissions,supplier_level,customer_level,enabled) values(#{username},#{password},#{salt},#{role},#{permissions},#{supplierLevel},#{customerLevel},#{enabled})")
     void insert(LoginUser user);
 
-    @Update("update users set role=#{role},permissions=#{permissions},enabled=#{enabled},updated_at=current_timestamp where id=#{id}")
+    @Update("update users set role=#{role},permissions=#{permissions},supplier_level=#{supplierLevel},customer_level=#{customerLevel},enabled=#{enabled},updated_at=current_timestamp where id=#{id}")
     void updateBase(LoginUser user);
 
     @Update("update users set password=#{password},salt=#{salt},updated_at=current_timestamp where id=#{id}")

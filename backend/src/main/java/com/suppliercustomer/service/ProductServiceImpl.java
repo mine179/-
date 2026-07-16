@@ -92,6 +92,10 @@ public class ProductServiceImpl implements ProductService {
         if ("orders".equals(name)) {
             return productMapper.listAdminOrderRows();
         }
+        if ("internal".equals(name)) {
+            productMapper.refreshInternalLinkCounts();
+            return productMapper.listTable(tableName(name));
+        }
         if ("supplier".equals(name)) {
             return productMapper.listAdminSupplierProductRows();
         }
@@ -622,6 +626,7 @@ public class ProductServiceImpl implements ProductService {
         result.put("message", "导入完成");
         result.put("total", total);
         result.put("updated", updated);
+        result.put("changed", updated);
         return result;
     }
 
@@ -634,6 +639,7 @@ public class ProductServiceImpl implements ProductService {
     public void addSupplierSubmission(String supplierUsername, Product product) {
         clearProtectedCodes(product);
         product.setSupplierUsername(supplierUsername);
+        ensureSupplierProductNotDuplicate(product, null);
         applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
         syncSupplierManualPriceToInternal(product);
@@ -644,6 +650,7 @@ public class ProductServiceImpl implements ProductService {
         if (empty(product.getSupplierUsername())) {
             throw new CustomException("SUPPLIER_REQUIRED");
         }
+        ensureSupplierProductNotDuplicate(product, null);
         applySupplierCodeStatus(product);
         productMapper.insertSupplierSubmission(product);
         syncSupplierManualPriceToInternal(product);
@@ -799,6 +806,7 @@ public class ProductServiceImpl implements ProductService {
         result.put("message", "导入完成");
         result.put("total", total);
         result.put("updated", updated);
+        result.put("changed", updated);
         return result;
     }
 
@@ -819,6 +827,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public List<Product> listInternalProducts() {
+        productMapper.refreshInternalLinkCounts();
         return productMapper.listInternalProducts();
     }
 
@@ -874,6 +883,7 @@ public class ProductServiceImpl implements ProductService {
         result.put("message", "下单完成");
         result.put("orderNo", orderNo);
         result.put("total", total);
+        result.put("changed", total);
         return result;
     }
 
@@ -1000,6 +1010,7 @@ public class ProductServiceImpl implements ProductService {
         result.put("orderNo", orderNo);
         result.put("total", total);
         result.put("unmatched", unmatched);
+        result.put("changed", total);
         return result;
     }
 
@@ -1110,15 +1121,18 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Map<String, Object> importTable(String name, MultipartFile file) throws IOException {
+    public Map<String, Object> importTable(String name, MultipartFile file, String mode) throws IOException {
         if ("orders".equals(name)) {
             return importAdminCustomerOrders(file);
         }
         if ("internal".equals(name)) {
-            return importInternalProducts(file);
+            return importInternalProducts(file, mode);
         }
         if ("supplier".equals(name)) {
-            return importAdminSupplierRows(file);
+            return importAdminSupplierRows(file, mode);
+        }
+        if ("customerProducts".equals(name)) {
+            return importAdminCustomerProducts(file, mode);
         }
         List<FieldDef> fields = templateFields(name);
         String dbTable = tableName(name);
@@ -1126,10 +1140,11 @@ public class ProductServiceImpl implements ProductService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", "导入完成");
         result.put("total", total);
+        result.put("changed", total);
         return result;
     }
 
-    private Map<String, Object> importAdminSupplierRows(MultipartFile file) throws IOException {
+    private Map<String, Object> importAdminSupplierRows(MultipartFile file, String mode) throws IOException {
         List<FieldDef> fields = templateFields("supplier");
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
@@ -1144,10 +1159,14 @@ public class ProductServiceImpl implements ProductService {
             Map<String, Object> data = readTableRow(row, fields);
             String supplierUsername = String.valueOf(data.get("supplier_username") == null ? "" : data.get("supplier_username"));
             String specModel = String.valueOf(data.get("spec_model") == null ? "" : data.get("spec_model"));
+            String commonModel = String.valueOf(data.get("common_model") == null ? "" : data.get("common_model"));
             if (empty(supplierUsername)) {
                 throw new CustomException("第" + (i + 1) + " 行缺少供应商账号");
             }
-            Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(specModel, supplierUsername);
+            Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(specModel, commonModel, supplierUsername);
+            if (existing != null && importCreateMode(mode)) {
+                throw new CustomException("第 " + (i + 1) + " 行已有该产品，请勿重复导入");
+            }
             Product imported = mapToProduct(data);
             applySupplierCodeStatus(imported);
             data.put("status", imported.getStatus());
@@ -1157,8 +1176,8 @@ public class ProductServiceImpl implements ProductService {
             } else {
                 productMapper.updateTableRow("supplier_submissions", existing.getId(), data);
                 syncLinkedMaster("supplier", existing.getId());
-                updated++;
             }
+            updated++;
             syncSupplierManualPriceToInternal(mapToSupplierProduct(data));
             total++;
         }
@@ -1167,10 +1186,11 @@ public class ProductServiceImpl implements ProductService {
         result.put("message", "导入完成");
         result.put("total", total);
         result.put("updated", updated);
+        result.put("changed", updated);
         return result;
     }
 
-    private Map<String, Object> importInternalProducts(MultipartFile file) throws IOException {
+    private Map<String, Object> importInternalProducts(MultipartFile file, String mode) throws IOException {
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
         validateHeader(sheet, PRODUCT_FIELDS);
@@ -1184,13 +1204,19 @@ public class ProductServiceImpl implements ProductService {
             Product product = readRow(row, PRODUCT_FIELDS);
             Product existing = empty(product.getCode()) ? null : productMapper.findInternalProductByCode(product.getCode());
             if (existing == null) {
+                existing = findDuplicateInternalProduct(product);
+            }
+            if (existing != null && importCreateMode(mode)) {
+                throw new CustomException("第 " + (i + 1) + " 行已有该产品，请勿重复导入");
+            }
+            if (existing == null) {
                 saveInternalProduct(product);
             } else {
                 product.setId(existing.getId());
                 productMapper.updateTableRow("internal_products", existing.getId(), internalProductData(product));
                 syncSupplierProductsFromInternal(product);
-                updated++;
             }
+            updated++;
             total++;
         }
         workbook.close();
@@ -1198,6 +1224,44 @@ public class ProductServiceImpl implements ProductService {
         result.put("message", "导入完成");
         result.put("total", total);
         result.put("updated", updated);
+        result.put("changed", updated);
+        return result;
+    }
+
+    private Map<String, Object> importAdminCustomerProducts(MultipartFile file, String mode) throws IOException {
+        List<FieldDef> fields = templateFields("customerProducts");
+        Workbook workbook = new XSSFWorkbook(file.getInputStream());
+        Sheet sheet = workbook.getSheetAt(0);
+        validateHeader(sheet, fields);
+        int total = 0;
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null || blankRow(row, fields.size())) {
+                continue;
+            }
+            Map<String, Object> data = readTableRow(row, fields);
+            String customerUsername = String.valueOf(data.get("customer_username") == null ? "" : data.get("customer_username"));
+            String specModel = String.valueOf(data.get("spec_model") == null ? "" : data.get("spec_model"));
+            String commonModel = String.valueOf(data.get("common_model") == null ? "" : data.get("common_model"));
+            if (empty(customerUsername)) {
+                throw new CustomException("第 " + (i + 1) + " 行缺少客户账号");
+            }
+            Product existing = productMapper.findCustomerProductByModels(customerUsername, specModel, commonModel);
+            if (existing != null && importCreateMode(mode)) {
+                throw new CustomException("第 " + (i + 1) + " 行已有该产品，请勿重复导入");
+            }
+            if (existing == null) {
+                productMapper.insertTableRow("customer_products", data);
+            } else {
+                productMapper.updateTableRow("customer_products", existing.getId(), data);
+            }
+            total++;
+        }
+        workbook.close();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("message", "导入完成");
+        result.put("total", total);
+        result.put("changed", total);
         return result;
     }
 
@@ -1245,6 +1309,7 @@ public class ProductServiceImpl implements ProductService {
         result.put("total", total);
         result.put("unmatched", unmatched);
         result.put("orders", orderNoByCustomer.size());
+        result.put("changed", total);
         return result;
     }
 
@@ -1309,8 +1374,49 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private void saveInternalProduct(Product product) {
+        if (duplicateInternalProduct(product, product.getId())) {
+            throw new CustomException("已有该产品，请勿重复新增");
+        }
         productMapper.insertInternalProduct(product);
         syncSupplierProductsFromInternal(product);
+    }
+
+    private boolean duplicateInternalProduct(Product product, Long selfId) {
+        Product existing = findDuplicateInternalProduct(product);
+        return existing != null && (selfId == null || !selfId.equals(existing.getId()));
+    }
+
+    private Product findDuplicateInternalProduct(Product product) {
+        if (product == null) {
+            return null;
+        }
+        Product existing = !empty(product.getCode()) ? productMapper.findInternalProductByCode(product.getCode()) : null;
+        if (existing != null) {
+            return existing;
+        }
+        return productMapper.findInternalProductByIdentity(
+                product.getBrand(),
+                product.getSpecModel(),
+                product.getCommonModel()
+        );
+    }
+
+    private boolean importCreateMode(String mode) {
+        return !"update".equalsIgnoreCase(mode);
+    }
+
+    private void ensureSupplierProductNotDuplicate(Product product, Long selfId) {
+        if (product == null || empty(product.getSupplierUsername())) {
+            return;
+        }
+        Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(
+                product.getSpecModel() == null ? "" : product.getSpecModel(),
+                product.getCommonModel() == null ? "" : product.getCommonModel(),
+                product.getSupplierUsername()
+        );
+        if (existing != null && (selfId == null || !selfId.equals(existing.getId()))) {
+            throw new CustomException("该供应商账号下已有该产品，请勿重复新增");
+        }
     }
 
     private void syncSupplierProductsFromInternal(Product internal) {
@@ -1377,15 +1483,16 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Map<String, Object> uploadSupplierSubmissions(String supplierUsername, MultipartFile file) throws IOException {
-        int total = importSupplierRows(file, supplierUsername);
+    public Map<String, Object> uploadSupplierSubmissions(String supplierUsername, MultipartFile file, String mode) throws IOException {
+        int total = importSupplierRows(file, supplierUsername, mode);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", "导入完成");
         result.put("total", total);
+        result.put("changed", total);
         return result;
     }
 
-    private int importSupplierRows(MultipartFile file, String supplierUsername) throws IOException {
+    private int importSupplierRows(MultipartFile file, String supplierUsername, String mode) throws IOException {
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
         validateHeader(sheet, SUPPLIER_PRODUCT_FIELDS);
@@ -1400,8 +1507,12 @@ public class ProductServiceImpl implements ProductService {
             applySupplierCodeStatus(product);
             Product existing = productMapper.findSupplierSubmissionBySpecAndSupplier(
                     product.getSpecModel() == null ? "" : product.getSpecModel(),
+                    product.getCommonModel() == null ? "" : product.getCommonModel(),
                     supplierUsername
             );
+            if (existing != null && importCreateMode(mode)) {
+                throw new CustomException("第 " + (i + 1) + " 行已有该产品，请勿重复导入");
+            }
             if (existing == null) {
                 productMapper.insertSupplierSubmission(product);
             } else {

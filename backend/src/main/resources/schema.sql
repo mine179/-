@@ -5,10 +5,14 @@ CREATE TABLE IF NOT EXISTS users (
     salt VARCHAR(80),
     role VARCHAR(20) NOT NULL,
     permissions VARCHAR(500) DEFAULT '',
+    supplier_level VARCHAR(40),
+    customer_level VARCHAR(40),
     enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS supplier_level VARCHAR(40);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_level VARCHAR(40);
 
 CREATE TABLE IF NOT EXISTS master_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -68,6 +72,8 @@ CREATE TABLE IF NOT EXISTS internal_products (
     order_price_3 VARCHAR(160),
     order_price_4 VARCHAR(160),
     order_price_5 VARCHAR(160),
+    customer_link_count INT DEFAULT 0,
+    supplier_link_count INT DEFAULT 0,
     update_date DATE,
     master_product_id BIGINT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -86,6 +92,8 @@ ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_3 VARCHAR(160
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_4 VARCHAR(160);
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS order_price_5 VARCHAR(160);
 ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS price_valid_until DATE;
+ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS customer_link_count INT DEFAULT 0;
+ALTER TABLE internal_products ADD COLUMN IF NOT EXISTS supplier_link_count INT DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS supplier_submissions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

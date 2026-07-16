@@ -169,9 +169,10 @@ public class ApiController {
     @PostMapping("/admin/table/{name}/import")
     public Result importTable(@RequestHeader("Authorization") String authorization,
                               @PathVariable String name,
-                              @RequestParam("file") MultipartFile file) throws IOException {
+                              @RequestParam("file") MultipartFile file,
+                              @RequestParam(value = "mode", defaultValue = "create") String mode) throws IOException {
         userService.requireRole(authorization, "ADMIN");
-        return Result.success(productService.importTable(name, file));
+        return Result.success(productService.importTable(name, file, mode));
     }
 
     @PostMapping("/admin/master-products")
@@ -351,9 +352,10 @@ public class ApiController {
 
     @PostMapping("/supplier/upload")
     public Result supplierUpload(@RequestHeader("Authorization") String authorization,
-                                 @RequestParam("file") MultipartFile file) throws IOException {
+                                 @RequestParam("file") MultipartFile file,
+                                 @RequestParam(value = "mode", defaultValue = "create") String mode) throws IOException {
         LoginUser user = userService.requireRole(authorization, "SUPPLIER");
-        return Result.success(productService.uploadSupplierSubmissions(user.getUsername(), file));
+        return Result.success(productService.uploadSupplierSubmissions(user.getUsername(), file, mode));
     }
 
     @GetMapping("/supplier/quotes")

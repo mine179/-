@@ -203,11 +203,11 @@ async function uploadFile() {
   try {
     const formData = new FormData()
     formData.append('file', state.file)
-    const result = await request.post('/supplier/upload', formData)
+    const result = await request.post(`/supplier/upload?mode=${encodeURIComponent(state.importMode || 'create')}`, formData)
     state.file = null
     state.modal = ''
     await load()
-    toast(`导入完成，共 ${result.total} 条`)
+    toast(`导入成功，共有 ${result.changed ?? result.total ?? 0} 条信息进行改动`)
   } catch (error) {
     toast(error.message)
   }
@@ -278,7 +278,7 @@ async function importQuotePrices() {
   state.quoteFile = null
   state.modal = ''
   await load()
-  toast(`导入完成，读取 ${result.total} 行，成功填价 ${result.updated} 行`)
+  toast(`导入成功，共有 ${result.changed ?? result.updated ?? 0} 条信息进行改动`)
 }
 
 function rowMatches(row) {

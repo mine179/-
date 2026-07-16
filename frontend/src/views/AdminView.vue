@@ -79,8 +79,25 @@ const productColumnKeys = productFields.map(([key]) => camelToSnake(key))
 const supplierProductColumnKeys = supplierProductDisplayFields.map(([key]) => camelToSnake(key))
 const quoteProductColumnKeys = supplierProductColumnKeys.filter(key => key !== 'price_valid_until')
 const customerProductColumnKeys = customerProductFields.map(([key]) => camelToSnake(key))
+const supplierLevelOptions = [
+  ['指定级', '指定级'],
+  ['同等价格优先级', '同等价格优先级'],
+  ['候选级', '候选级'],
+  ['谨慎级', '谨慎级'],
+  ['淘汰级', '淘汰级']
+]
+const customerLevelOptions = [
+  ['售后国代', '售后国代'],
+  ['一级国代', '一级国代'],
+  ['市代', '市代'],
+  ['经销商', '经销商'],
+  ['贴牌OEM', '贴牌OEM'],
+  ['潜力培养级', '潜力培养级'],
+  ['普通级', '普通级'],
+  ['零售级', '零售级']
+]
 const tableColumns = {
-  internal: ['id', ...productColumnKeys, 'updated_at'],
+  internal: ['id', ...productColumnKeys, 'customer_link_count', 'supplier_link_count', 'updated_at'],
   supplier: ['id', 'link_status', 'quote_status', ...supplierProductColumnKeys, 'supplier_username', 'updated_at'],
   orders: ['id', 'order_no', 'customer_username', 'created_at', 'status', 'material_link_status', 'order_remark', ...productColumnKeys, 'updated_at'],
   customerProducts: ['id', 'status', 'material_link_status', 'code', 'new_code', ...customerProductColumnKeys, 'customer_username', 'updated_at'],
@@ -92,7 +109,7 @@ const tableColumns = {
     'ref_price_3', 'supplier_3', 'ref_valid_until_3', 'ref_price_4', 'supplier_4', 'ref_valid_until_4',
     'ref_price_5', 'supplier_5', 'ref_valid_until_5'
   ],
-  users: ['id', 'username', 'role', 'enabled', 'created_at', 'updated_at']
+  users: ['id', 'username', 'role', 'supplier_level', 'customer_level', 'enabled', 'created_at', 'updated_at']
 }
 
 const state = reactive({
@@ -102,7 +119,7 @@ const state = reactive({
   passwordForm: { password: '', confirmPassword: '' },
   modal: '',
   product: {},
-  account: { username: '', password: '123456', role: 'SUPPLIER', enabled: true },
+  account: { username: '', password: '123456', role: 'SUPPLIER', supplierLevel: '指定级', customerLevel: '', enabled: true },
   accountEdit: {},
   approve: { id: null, code: '', newCode: '' },
   editRow: {},
@@ -225,8 +242,9 @@ function closeModal() {
 }
 
 async function addAccount() {
+  normalizeAccountLevels(state.account)
   await request.post('/admin/users', state.account)
-  state.account = { username: '', password: '123456', role: 'SUPPLIER', enabled: true }
+  state.account = { username: '', password: '123456', role: 'SUPPLIER', supplierLevel: '指定级', customerLevel: '', enabled: true }
   closeModal()
   await load()
   toast('账号已添加')
@@ -238,10 +256,24 @@ function openAccountEdit(row) {
 }
 
 async function saveAccountEdit() {
+  normalizeAccountLevels(state.accountEdit)
   await request.put(`/admin/users/${state.accountEdit.id}`, state.accountEdit)
   closeModal()
   await load()
   toast('账号已修改')
+}
+
+function normalizeAccountLevels(account) {
+  if (account.role === 'SUPPLIER') {
+    account.supplierLevel = account.supplierLevel || '指定级'
+    account.customerLevel = ''
+  } else if (account.role === 'CUSTOMER') {
+    account.customerLevel = account.customerLevel || '普通级'
+    account.supplierLevel = ''
+  } else {
+    account.supplierLevel = ''
+    account.customerLevel = ''
+  }
 }
 
 async function deleteAccount(id) {
@@ -693,7 +725,7 @@ async function importAdminQuotePrices() {
   closeModal()
   await load()
   await refreshLinkCounts()
-  toast(`导入完成，读取 ${result.total} 行，成功填价 ${result.updated} 行`)
+  toast(`导入成功，共有 ${result.changed ?? result.updated ?? 0} 条信息进行改动`)
 }
 
 async function batchCancelOrderItems() {
@@ -1113,15 +1145,15 @@ async function importTable() {
   try {
     const formData = new FormData()
     formData.append('file', state.importFile)
-    const result = await request.post(`/admin/table/${apiTableName()}/import`, formData)
+    const result = await request.post(`/admin/table/${apiTableName()}/import?mode=${encodeURIComponent(state.importMode || 'create')}`, formData)
     state.importFile = null
     closeModal()
     await load()
     await refreshLinkCounts()
     if (state.tab === 'orders') {
-      toast(`导入完成，生成 ${result.orders} 个订单，共 ${result.total} 条，未匹配 ${result.unmatched} 条`)
+      toast(`导入成功，共有 ${result.changed ?? result.total ?? 0} 条信息进行改动，生成 ${result.orders} 个订单，未匹配 ${result.unmatched} 条`)
     } else {
-      toast(`导入完成，共 ${result.total} 条`)
+      toast(`导入成功，共有 ${result.changed ?? result.updated ?? result.total ?? 0} 条信息进行改动`)
     }
   } catch (error) {
     toast(error.message)
@@ -1503,6 +1535,12 @@ onMounted(async () => {
             <option value="CUSTOMER">客户</option>
             <option value="ADMIN">{{ '\u603b\u540e\u53f0' }}</option>
           </select>
+          <select v-if="state.account.role === 'SUPPLIER'" v-model="state.account.supplierLevel">
+            <option v-for="option in supplierLevelOptions" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
+          </select>
+          <select v-if="state.account.role === 'CUSTOMER'" v-model="state.account.customerLevel">
+            <option v-for="option in customerLevelOptions" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
+          </select>
           <button class="primary" @click="addAccount">保存</button>
         </div>
 
@@ -1513,6 +1551,12 @@ onMounted(async () => {
             <option value="SUPPLIER">{{ '\u4f9b\u5e94\u5546' }}</option>
             <option value="CUSTOMER">客户</option>
             <option value="ADMIN">{{ '\u603b\u540e\u53f0' }}</option>
+          </select>
+          <select v-if="state.accountEdit.role === 'SUPPLIER'" v-model="state.accountEdit.supplierLevel">
+            <option v-for="option in supplierLevelOptions" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
+          </select>
+          <select v-if="state.accountEdit.role === 'CUSTOMER'" v-model="state.accountEdit.customerLevel">
+            <option v-for="option in customerLevelOptions" :key="option[0]" :value="option[0]">{{ option[1] }}</option>
           </select>
           <select v-model="state.accountEdit.enabled">
             <option :value="true">启用</option>

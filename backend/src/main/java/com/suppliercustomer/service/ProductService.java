@@ -114,9 +114,9 @@ public interface ProductService {
 
     ResponseEntity<byte[]> tableTemplate(String name) throws IOException;
 
-    Map<String, Object> importTable(String name, MultipartFile file) throws IOException;
+    Map<String, Object> importTable(String name, MultipartFile file, String mode) throws IOException;
 
     ResponseEntity<byte[]> supplierTemplate() throws IOException;
 
-    Map<String, Object> uploadSupplierSubmissions(String supplierUsername, MultipartFile file) throws IOException;
+    Map<String, Object> uploadSupplierSubmissions(String supplierUsername, MultipartFile file, String mode) throws IOException;
 }

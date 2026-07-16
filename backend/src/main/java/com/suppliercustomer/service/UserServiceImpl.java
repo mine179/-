@@ -91,6 +91,7 @@ public class UserServiceImpl implements UserService {
         if (user.getEnabled() == null) {
             user.setEnabled(true);
         }
+        normalizeLevels(user);
         user.setPermissions(defaultPermissions(user.getRole()));
         setEncryptPassword(user, user.getPassword());
         userMapper.insert(user);
@@ -98,11 +99,29 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void update(LoginUser user) {
+        normalizeLevels(user);
         user.setPermissions(defaultPermissions(user.getRole()));
         userMapper.updateBase(user);
         if (user.getPassword() != null && !"".equals(user.getPassword())) {
             setEncryptPassword(user, user.getPassword());
             userMapper.updatePassword(user);
+        }
+    }
+
+    private void normalizeLevels(LoginUser user) {
+        if ("SUPPLIER".equals(user.getRole())) {
+            user.setCustomerLevel("");
+            if (user.getSupplierLevel() == null || "".equals(user.getSupplierLevel())) {
+                user.setSupplierLevel("指定级");
+            }
+        } else if ("CUSTOMER".equals(user.getRole())) {
+            user.setSupplierLevel("");
+            if (user.getCustomerLevel() == null || "".equals(user.getCustomerLevel())) {
+                user.setCustomerLevel("普通级");
+            }
+        } else {
+            user.setSupplierLevel("");
+            user.setCustomerLevel("");
         }
     }
 

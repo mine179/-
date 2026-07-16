@@ -139,7 +139,7 @@ async function uploadFile() {
     state.file = null
     state.modal = ''
     await switchView('orders')
-    toast(`上传完成：${result.orderNo}，共 ${result.total} 条，未匹配 ${result.unmatched} 条`)
+    toast(`导入成功，共有 ${result.changed ?? result.total ?? 0} 条信息进行改动，订单编号 ${result.orderNo}，未匹配 ${result.unmatched} 条`)
   } catch (error) {
     toast(error.message)
   }
